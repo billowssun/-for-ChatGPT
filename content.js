@@ -262,9 +262,24 @@
     });
   }
 
+  function foldableAssistantItems() {
+    const main = document.querySelector('main') || document.body;
+    return $all(main, '[data-message-author-role="assistant"]').map((content, index) => {
+      const root = closest(content, '[data-testid^="conversation-turn-"]') || closest(content, 'article') || content;
+      const id = content.getAttribute('data-message-id') || root?.getAttribute?.('data-testid') || '';
+      const blockIndex = $all(root || main, '[data-message-author-role="assistant"]').indexOf(content);
+      return {
+        root,
+        content,
+        role: 'assistant',
+        index,
+        key: id ? `assistant:${id}:${blockIndex}` : `assistant:${index}`
+      };
+    }).filter(item => item.root && item.content && !isOur(item.content));
+  }
+
   function findFoldTarget(item) {
-    if (item.role !== 'assistant') return null;
-    return item.root.querySelector('.markdown, .prose, [class*="markdown"], [class*="prose"], [class*="text-message"]') || item.content || item.root;
+    return item?.content || item?.root || null;
   }
 
   function clearFold(target) {
@@ -272,9 +287,11 @@
     target.style.removeProperty('--cn-fold-height');
   }
 
-  function foldButtonFor(item, key) {
-    const existing = item.root.querySelector(`[data-cn-more-button="true"][data-cn-fold-key="${CSS.escape(key)}"]`);
-    if (existing) return existing;
+  function foldButtonFor(target, key) {
+    const existing = target.querySelector(`:scope > [data-cn-more-button="true"][data-cn-fold-key="${CSS.escape(key)}"]`);
+    if (existing) {
+      return existing;
+    }
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'cn-more-button';
@@ -285,13 +302,14 @@
       else state.expanded.add(key);
       applyFolds();
     });
-    item.root.appendChild(btn);
+    target.appendChild(btn);
     return btn;
   }
 
   function applyFolds() {
     const activeTargets = new Set();
     const activeKeys = new Set();
+    const activeButtons = new Set();
     if (!state.settings.aiCollapseEnabled) {
       document.querySelectorAll('.cn-fold-target').forEach(clearFold);
       document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => btn.remove());
@@ -299,13 +317,14 @@
     }
 
     const h = clamp(Number(state.settings.collapseHeight || 360), 260, 900);
-    state.messages.forEach(item => {
+    foldableAssistantItems().forEach(item => {
       const target = findFoldTarget(item);
       if (!target) return;
-      const shouldFold = target.scrollHeight >= h + 40 || getReadableText(target, 1200).length >= 520;
+      const bodyText = getReadableText(target, 2000);
+      const shouldFold = target.scrollHeight >= h + 40 || bodyText.length >= 520;
       if (!shouldFold) {
         clearFold(target);
-        item.root.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => btn.remove());
+        target.querySelectorAll(':scope > [data-cn-more-button="true"]').forEach(btn => btn.remove());
         return;
       }
 
@@ -315,7 +334,9 @@
       target.classList.add('cn-fold-target', 'cn-collapsed');
       target.classList.toggle('cn-expanded', state.expanded.has(key));
       target.style.setProperty('--cn-fold-height', `${h}px`);
-      const btn = foldButtonFor(item, key);
+      const btn = foldButtonFor(target, key);
+      if (!btn) return;
+      activeButtons.add(btn);
       const expanded = state.expanded.has(key);
       btn.textContent = expanded ? '收起' : '展开';
       btn.setAttribute('aria-label', expanded ? '收起这条 AI 回复' : '展开这条 AI 回复');
@@ -325,7 +346,7 @@
       if (!activeTargets.has(el)) clearFold(el);
     });
     document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => {
-      if (!activeKeys.has(btn.dataset.cnFoldKey)) btn.remove();
+      if (!activeKeys.has(btn.dataset.cnFoldKey) || !activeButtons.has(btn)) btn.remove();
     });
   }
 
