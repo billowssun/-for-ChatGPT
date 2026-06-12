@@ -3,8 +3,8 @@ name: Build ThreadPilot release zip
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Release version. Leave empty to read manifest.json"
+      tag:
+        description: "Existing release tag, for example v1.0. Leave empty to use manifest.json."
         required: false
         type: string
   push:
@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          INPUT_VERSION="${{ github.event.inputs.version || '' }}"
+          INPUT_TAG="${{ github.event.inputs.tag || '' }}"
           REF_NAME="${{ github.ref_name }}"
           MANIFEST_VERSION=$(python - <<'PY'
           import json
@@ -40,37 +40,31 @@ jobs:
               print(json.load(f)['version'])
           PY
           )
+
           if [ "${{ github.event_name }}" = "push" ]; then
             TAG="$REF_NAME"
-            VERSION="${TAG#v}"
-          elif [ -n "$INPUT_VERSION" ]; then
-            VERSION="${INPUT_VERSION#v}"
-            TAG="v$VERSION"
+          elif [ -n "$INPUT_TAG" ]; then
+            TAG="${INPUT_TAG#refs/tags/}"
           else
-            VERSION="$MANIFEST_VERSION"
-            TAG="v$VERSION"
+            TAG="v$MANIFEST_VERSION"
+          fi
+
+          VERSION="${TAG#v}"
+          if [ "$TAG" = "$VERSION" ]; then
+            echo "::error::Release tag must start with v, for example v1.0."
+            exit 1
           fi
           if [ "$VERSION" != "$MANIFEST_VERSION" ]; then
             echo "::error::Release tag/version $VERSION does not match manifest.json version $MANIFEST_VERSION."
             exit 1
           fi
+          if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG does not exist. Create and push the tag yourself before running release."
+            exit 1
+          fi
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Ensure release tag for manual runs
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.version.outputs.tag }}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists; reusing it for the release."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG" "${{ github.sha }}"
-          git push origin "refs/tags/$TAG"
 
       - name: Prepare extension package
         shell: bash
@@ -88,9 +82,6 @@ jobs:
           cp about.js "$DIST/"
 
           if [ -d icons ]; then cp -R icons "$DIST/icons"; fi
-          if [ -f PRIVACY_POLICY.md ]; then cp PRIVACY_POLICY.md "$DIST/"; fi
-          if [ -f README.md ]; then cp README.md "$DIST/"; fi
-          if [ -f LICENSE ]; then cp LICENSE "$DIST/"; fi
 
           cd dist
           zip -r "threadpilot-for-chatgpt-${{ steps.version.outputs.version }}.zip" "threadpilot-for-chatgpt-${{ steps.version.outputs.version }}"
@@ -100,7 +91,6 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
           files: dist/threadpilot-for-chatgpt-${{ steps.version.outputs.version }}.zip
           generate_release_notes: true
           overwrite_files: true

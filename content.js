@@ -41,11 +41,12 @@
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const text = (s) => String(s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
   const isOur = (el) => !!(el && (el.id === EXT_ID || closest(el, `#${EXT_ID}`) || closest(el, '[data-cn-more-button="true"]')));
+
   const OFFICIAL_NAV_SELECTORS = [
     DEFAULTS.officialNavSelector,
     '[data-testid*="conversation"][data-testid*="nav"]',
     '[aria-label*="previous" i], [aria-label*="next" i], [aria-label*="上一" i], [aria-label*="下一" i]',
-    '.fixed.top-1\\/2, .fixed.-translate-y-1\\/2, [class*="top-1/2"], [class*="-translate-y-1/2"]'
+    '[class*="top-1/2"], [class*="-translate-y-1/2"], .fixed.top-1\\/2, .fixed.-translate-y-1\\/2'
   ];
 
   function readSettings() {
@@ -74,13 +75,20 @@
   function getReadableText(el, limit = 220) {
     if (!el) return '';
     const raw = text(el.innerText || el.textContent || '');
-    return raw.replace(/^(ChatGPT|Assistant|You|用户|助手|你|我)\s*[:：]?\s*/i, '').slice(0, limit);
+    return raw.replace(/^(ChatGPT|Assistant|You|用户|助手|我)\s*[:：]?\s*/i, '').slice(0, limit);
   }
 
   function detectRole(root) {
     const roleNode = root.matches?.('[data-message-author-role]') ? root : root.querySelector?.('[data-message-author-role]');
     const role = roleNode?.getAttribute('data-message-author-role');
     return role === 'assistant' || role === 'user' ? { role, content: roleNode } : { role: 'message', content: root };
+  }
+
+  function messageKey(root, role, index) {
+    const node = root.matches?.('[data-message-id]') ? root : root.querySelector?.('[data-message-id]');
+    const id = node?.getAttribute('data-message-id') || root.getAttribute('data-testid') || '';
+    if (id) return `${role}:${id}`;
+    return `${role}:${index}`;
   }
 
   function collectMessages() {
@@ -100,7 +108,7 @@
     roots.sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
     return roots.map((root, index) => {
       const { role, content } = detectRole(root);
-      return { root, content, role, index, number: index + 1, text: getReadableText(content || root, 240) };
+      return { root, content, role, index, number: index + 1, key: messageKey(root, role, index), text: getReadableText(content || root, 240) };
     }).filter(x => x.text.length > 1);
   }
 
@@ -256,46 +264,82 @@
     return item.root.querySelector('.markdown, .prose, [class*="markdown"], [class*="prose"], [class*="text-message"]') || item.content || item.root;
   }
 
-  function applyFolds() {
-    document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => btn.remove());
-    document.querySelectorAll('.cn-fold-target').forEach(el => {
-      el.classList.remove('cn-fold-target', 'cn-collapsed', 'cn-expanded');
-      el.style.removeProperty('--cn-fold-height');
+  function clearFold(target) {
+    target.classList.remove('cn-fold-target', 'cn-collapsed', 'cn-expanded');
+    target.style.removeProperty('--cn-fold-height');
+  }
+
+  function buttonFor(target, key) {
+    const next = target.nextElementSibling;
+    if (next?.dataset?.cnMoreButton === 'true' && next.dataset.cnFoldKey === key) return next;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cn-more-button';
+    btn.dataset.cnMoreButton = 'true';
+    btn.dataset.cnFoldKey = key;
+    btn.addEventListener('click', () => {
+      if (state.expanded.has(key)) state.expanded.delete(key);
+      else state.expanded.add(key);
+      applyFolds();
     });
-    if (!state.settings.aiCollapseEnabled) return;
+    target.insertAdjacentElement('afterend', btn);
+    return btn;
+  }
+
+  function applyFolds() {
+    const activeTargets = new Set();
+    if (!state.settings.aiCollapseEnabled) {
+      document.querySelectorAll('.cn-fold-target').forEach(clearFold);
+      document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => btn.remove());
+      return;
+    }
+
     const h = clamp(Number(state.settings.collapseHeight || 360), 260, 900);
     state.messages.forEach(item => {
       const target = findFoldTarget(item);
-      if (!target || target.scrollHeight < h + 40 && getReadableText(target, 1200).length < 520) return;
-      const key = `cn-${item.index}-${getReadableText(target, 40).replace(/\W+/g, '-')}`;
+      if (!target) return;
+      const shouldFold = target.scrollHeight >= h + 40 || getReadableText(target, 1200).length >= 520;
+      if (!shouldFold) {
+        clearFold(target);
+        const btn = target.nextElementSibling;
+        if (btn?.dataset?.cnMoreButton === 'true') btn.remove();
+        return;
+      }
+
+      activeTargets.add(target);
+      const key = item.key;
       target.classList.add('cn-fold-target', 'cn-collapsed');
       target.classList.toggle('cn-expanded', state.expanded.has(key));
       target.style.setProperty('--cn-fold-height', `${h}px`);
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'cn-more-button';
-      btn.setAttribute('data-cn-more-button', 'true');
-      btn.textContent = state.expanded.has(key) ? '折叠' : '展开';
-      btn.setAttribute('aria-label', state.expanded.has(key) ? '折叠这条 AI 回复' : '展开这条 AI 回复');
-      btn.addEventListener('click', () => {
-        if (state.expanded.has(key)) state.expanded.delete(key); else state.expanded.add(key);
-        applyFolds();
-      });
-      target.insertAdjacentElement('afterend', btn);
+      const btn = buttonFor(target, key);
+      const expanded = state.expanded.has(key);
+      btn.textContent = expanded ? '收起' : '展开';
+      btn.setAttribute('aria-label', expanded ? '收起这条 AI 回复' : '展开这条 AI 回复');
+    });
+
+    document.querySelectorAll('.cn-fold-target').forEach(el => {
+      if (!activeTargets.has(el)) clearFold(el);
+    });
+    document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => {
+      const prev = btn.previousElementSibling;
+      if (!prev || !activeTargets.has(prev)) btn.remove();
     });
   }
 
   function isOfficialNavCandidate(el) {
-    if (!el || isOur(el) || closest(el, 'main, article, form, textarea, [contenteditable="true"]')) return false;
+    if (!el || isOur(el) || closest(el, `#${EXT_ID}, form, textarea, [contenteditable="true"]`)) return false;
     const rect = el.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return false;
-    if (rect.height > window.innerHeight * 0.38 || rect.width > 140) return false;
+    if (rect.height > window.innerHeight * 0.45 || rect.width > 180) return false;
     const style = getComputedStyle(el);
     if (style.position !== 'fixed' && style.position !== 'sticky') return false;
-    const nearSide = rect.left <= 96 || window.innerWidth - rect.right <= 160;
-    const nearMiddle = rect.top < window.innerHeight * 0.72 && rect.bottom > window.innerHeight * 0.18;
-    const hasNavControl = !!el.querySelector('button, a, [role="button"]') || /previous|next|上一|下一/i.test(el.getAttribute('aria-label') || '');
-    return nearSide && nearMiddle && hasNavControl;
+
+    const label = text(el.getAttribute('aria-label') || el.textContent || '');
+    const hasPrevNext = /previous|next|上一|下一|向上|向下/i.test(label);
+    const hasControl = !!el.querySelector('button, a, [role="button"]');
+    const nearSide = rect.left <= 120 || window.innerWidth - rect.right <= 180;
+    const nearMiddle = rect.top < window.innerHeight * 0.78 && rect.bottom > window.innerHeight * 0.14;
+    return nearSide && nearMiddle && (hasPrevNext || hasControl);
   }
 
   function officialNavCandidates() {
@@ -310,20 +354,24 @@
       ...OFFICIAL_NAV_SELECTORS
     ];
     selectors.forEach(selector => $all(document, selector).forEach(add));
-    $all(document, 'body > div, body > nav, body > aside, [role="navigation"]').forEach((el) => {
+    $all(document, 'body > div, body > nav, body > aside, [role="navigation"], [aria-label]').forEach((el) => {
       if (isOfficialNavCandidate(el)) found.add(el);
     });
     return [...found];
   }
 
+  function restoreOfficialNav() {
+    document.querySelectorAll('[data-cn-hidden-official-nav="true"]').forEach(el => {
+      if (el.dataset.cnPreviousDisplay) el.style.display = el.dataset.cnPreviousDisplay;
+      else el.style.removeProperty('display');
+      delete el.dataset.cnPreviousDisplay;
+      el.removeAttribute('data-cn-hidden-official-nav');
+    });
+  }
+
   function hideOfficialNav() {
     if (!state.settings.hideOfficialNav) {
-      document.querySelectorAll('[data-cn-hidden-official-nav="true"]').forEach(el => {
-        if (el.dataset.cnPreviousDisplay) el.style.display = el.dataset.cnPreviousDisplay;
-        else el.style.removeProperty('display');
-        delete el.dataset.cnPreviousDisplay;
-        el.removeAttribute('data-cn-hidden-official-nav');
-      });
+      restoreOfficialNav();
       return;
     }
     officialNavCandidates().forEach(el => {
@@ -358,7 +406,10 @@
 
   function observe() {
     state.observer?.disconnect();
-    state.observer = new MutationObserver(() => rebuildSoon(state.settings.performanceMode ? 600 : 220));
+    state.observer = new MutationObserver((mutations) => {
+      if (mutations.every(m => isOur(m.target))) return;
+      rebuildSoon(state.settings.performanceMode ? 900 : 320);
+    });
     state.observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     window.addEventListener('scroll', updateActive, true);
     window.addEventListener('resize', () => rebuildSoon(200));
@@ -366,10 +417,11 @@
 
   document.addEventListener('keydown', (e) => {
     if (!e.altKey) return;
-    if (e.key.toLowerCase() === 'j') saveSettings({ enabled: !state.settings.enabled });
-    if (e.key.toLowerCase() === 'c') saveSettings({ aiCollapseEnabled: !state.settings.aiCollapseEnabled, aiFoldEnabled: !state.settings.aiCollapseEnabled });
-    if (e.key.toLowerCase() === 'n') scrollTo(state.visible[Math.min(state.visible.length - 1, Math.max(0, state.visible.findIndex(m => m.root.getBoundingClientRect().top > 10)))]);
-    if (e.key.toLowerCase() === 'p') scrollTo(state.visible[Math.max(0, Math.max(0, state.visible.findIndex(m => m.root.getBoundingClientRect().top > 10)) - 1)]);
+    const key = e.key.toLowerCase();
+    if (key === 'j') saveSettings({ enabled: !state.settings.enabled });
+    if (key === 'c') saveSettings({ aiCollapseEnabled: !state.settings.aiCollapseEnabled, aiFoldEnabled: !state.settings.aiCollapseEnabled });
+    if (key === 'n') scrollTo(state.visible[Math.min(state.visible.length - 1, Math.max(0, state.visible.findIndex(m => m.root.getBoundingClientRect().top > 10)))]);
+    if (key === 'p') scrollTo(state.visible[Math.max(0, Math.max(0, state.visible.findIndex(m => m.root.getBoundingClientRect().top > 10)) - 1)]);
   });
 
   function init() {

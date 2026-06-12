@@ -5,14 +5,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ThreadPilot for ChatGPT</title>
   <style>
-    :root{color-scheme:light dark;--a:#10a37f;--b:#3b82f6;--m:color-mix(in srgb,CanvasText 62%,transparent);--l:color-mix(in srgb,CanvasText 14%,transparent)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 16% 6%,color-mix(in srgb,var(--a) 24%,transparent),transparent 30%),radial-gradient(circle at 82% 0,color-mix(in srgb,var(--b) 20%,transparent),transparent 28%),Canvas;color:CanvasText;font:15px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.page{width:min(1080px,calc(100% - 36px));margin:0 auto;padding:34px 0 46px}a{color:inherit;text-decoration:none}.nav,.hero,.card,.note{border:1px solid var(--l);background:color-mix(in srgb,Canvas 88%,transparent);box-shadow:0 18px 60px rgba(0,0,0,.08)}.nav{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:22px;padding:10px 12px;border-radius:999px}.brand{display:flex;align-items:center;gap:10px}.logo{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,var(--a),var(--b));color:#fff;font-weight:900}.brand small{display:block;color:var(--m)}.right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.links{display:flex;gap:8px;flex-wrap:wrap}.links a,.btn,.lang button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 14px;border:1px solid var(--l);border-radius:999px;background:color-mix(in srgb,CanvasText 5%,transparent);font-weight:760;font-size:12px;cursor:pointer}.lang{display:flex;gap:4px;padding:3px;border:1px solid var(--l);border-radius:999px}.lang button{min-height:28px;padding:0 10px;border:0;background:transparent}.lang button.active{background:var(--a);color:#fff}.btn.primary{background:var(--a);border-color:var(--a);color:#fff}.hero{padding:clamp(30px,5vw,58px);border-radius:34px}.badge{display:inline-flex;padding:6px 12px;border-radius:999px;background:color-mix(in srgb,var(--a) 12%,transparent);color:var(--a);font-weight:850;font-size:12px}h1{max-width:850px;margin:18px 0 12px;font-size:clamp(38px,7vw,78px);line-height:.97;letter-spacing:-.06em}.lead{max-width:720px;margin:0;color:var(--m);font-size:clamp(16px,2vw,20px)}.cta,.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}.pill{padding:7px 10px;border:1px solid var(--l);border-radius:999px;color:var(--m);font-size:12px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:22px}.card{padding:18px;border-radius:24px}.card h3{margin:0 0 8px}.card p{margin:0;color:var(--m)}.icon{width:36px;height:36px;display:grid;place-items:center;margin-bottom:12px;border-radius:14px;background:color-mix(in srgb,var(--a) 12%,transparent);color:var(--a);font-weight:900}.note{margin-top:22px;padding:14px 16px;border-radius:18px;color:var(--m)}footer{margin-top:24px;text-align:center;color:var(--m);font-size:12px}body [data-lang]{display:none}html[data-lang="en"] body [data-lang="en"],html[data-lang="zh"] body [data-lang="zh"]{display:revert}@media(max-width:820px){.grid{grid-template-columns:1fr}.nav{align-items:flex-start;border-radius:24px;flex-direction:column}.right{align-items:flex-start}}
+    :root {
+      color-scheme: light dark;
+      --a: #10a37f;
+      --b: #3b82f6;
+      --text: CanvasText;
+      --muted: color-mix(in srgb, CanvasText 62%, transparent);
+      --line: color-mix(in srgb, CanvasText 14%, transparent);
+      --panel: color-mix(in srgb, Canvas 88%, transparent);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 16% 6%, color-mix(in srgb, var(--a) 24%, transparent), transparent 30%), radial-gradient(circle at 82% 0, color-mix(in srgb, var(--b) 20%, transparent), transparent 28%), Canvas;
+      color: var(--text);
+      font: 15px/1.65 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    a { color: inherit; text-decoration: none; }
+    .page { width: min(1080px, calc(100% - 36px)); margin: 0 auto; padding: 34px 0 46px; }
+    .nav, .hero, .card, .note { border: 1px solid var(--line); background: var(--panel); box-shadow: 0 18px 60px rgba(0,0,0,.08); }
+    .nav { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 22px; padding: 10px 12px; border-radius: 999px; }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .logo { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; background: linear-gradient(135deg, var(--a), var(--b)); color: #fff; font-weight: 900; }
+    .brand small { display: block; color: var(--muted); }
+    .right, .links, .cta, .meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .lang { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; }
+    .links a, .btn, .lang button { display: inline-grid; place-items: center; height: 36px; min-height: 0; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, CanvasText 5%, transparent); font: 760 12px/1 "Microsoft YaHei", system-ui, sans-serif; cursor: pointer; }
+    .lang button { height: 28px; padding: 0 10px; border: 0; background: transparent; }
+    .lang button.active { background: var(--a); color: #fff; }
+    .btn.primary { background: var(--a); border-color: var(--a); color: #fff; }
+    .hero { padding: clamp(30px, 5vw, 58px); border-radius: 28px; }
+    .badge { display: inline-grid; place-items: center; min-height: 30px; padding: 0 12px; border-radius: 999px; background: color-mix(in srgb, var(--a) 12%, transparent); color: var(--a); font-weight: 850; font-size: 12px; }
+    h1 { max-width: 850px; margin: 18px 0 12px; font-size: clamp(38px, 7vw, 78px); line-height: 1; letter-spacing: 0; }
+    .lead { max-width: 720px; margin: 0; color: var(--muted); font-size: clamp(16px, 2vw, 20px); }
+    .cta { margin-top: 24px; }
+    .cta .btn { height: 44px; padding: 0 18px; }
+    .meta { margin-top: 24px; }
+    .pill { display: inline-grid; place-items: center; min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
+    .card { padding: 18px; border-radius: 8px; }
+    .card h3 { margin: 0 0 8px; }
+    .card p { margin: 0; color: var(--muted); }
+    .icon { width: 36px; height: 36px; display: grid; place-items: center; margin-bottom: 12px; border-radius: 8px; background: color-mix(in srgb, var(--a) 12%, transparent); color: var(--a); font-weight: 900; }
+    .note { margin-top: 22px; padding: 14px 16px; border-radius: 8px; color: var(--muted); }
+    footer { margin-top: 24px; text-align: center; color: var(--muted); font-size: 12px; }
+    body [data-lang] { display: none; }
+    html[data-lang="en"] body [data-lang="en"], html[data-lang="zh"] body [data-lang="zh"] { display: revert; }
+    @media (max-width: 820px) {
+      .grid { grid-template-columns: 1fr; }
+      .nav { align-items: flex-start; border-radius: 24px; flex-direction: column; }
+      .right { align-items: flex-start; }
+    }
   </style>
 </head>
 <body>
   <div class="page">
     <header class="nav">
-      <a class="brand" href="#"><span class="logo">TP</span><span><strong>ThreadPilot for ChatGPT</strong><small data-lang="en">Long conversation navigator</small><small data-lang="zh">长对话导航助手</small></span></a>
-      <div class="right"><div class="lang"><button id="lang-en">EN</button><button id="lang-zh">中文</button></div><nav class="links"><a href="#features" data-lang="en">Features</a><a href="#features" data-lang="zh">功能</a><a href="#privacy" data-lang="en">Privacy</a><a href="#privacy" data-lang="zh">隐私</a></nav></div>
+      <a class="brand" href="#">
+        <span class="logo">TP</span>
+        <span><strong>ThreadPilot for ChatGPT</strong><small data-lang="en">Long conversation navigator</small><small data-lang="zh">长对话导航助手</small></span>
+      </a>
+      <div class="right">
+        <div class="lang"><button id="lang-en" type="button">EN</button><button id="lang-zh" type="button">中文</button></div>
+        <nav class="links"><a href="#features" data-lang="en">Features</a><a href="#features" data-lang="zh">功能</a><a href="#privacy" data-lang="en">Privacy</a><a href="#privacy" data-lang="zh">隐私</a></nav>
+      </div>
     </header>
     <main>
       <section class="hero">
@@ -20,10 +76,18 @@
         <h1 data-lang="en">Navigate long ChatGPT conversations with ease.</h1><h1 data-lang="zh">轻松导航 ChatGPT 长对话。</h1>
         <p class="lead" data-lang="en">ThreadPilot adds a clean side navigator, hover previews, role filters, fast jump controls, and AI reply folding for long ChatGPT threads.</p><p class="lead" data-lang="zh">ThreadPilot 为 ChatGPT 网页端长对话提供侧边导航、悬浮预览、角色筛选、快速跳转和 AI 长回复折叠。</p>
         <div class="cta"><a class="btn primary" href="https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest" data-lang="en">Get ThreadPilot</a><a class="btn primary" href="https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest" data-lang="zh">获取 ThreadPilot</a><a class="btn" href="#features" data-lang="en">See features</a><a class="btn" href="#features" data-lang="zh">查看功能</a></div>
-        <div class="meta"><span class="pill">Version 1.0</span><span class="pill" data-lang="en">No conversation upload</span><span class="pill" data-lang="zh">不上传对话内容</span><span class="pill" data-lang="en">Made for ChatGPT</span><span class="pill" data-lang="zh">专为 ChatGPT 长对话设计</span></div>
+        <div class="meta"><span class="pill">Version 1.1</span><span class="pill" data-lang="en">No conversation upload</span><span class="pill" data-lang="zh">不上传对话内容</span><span class="pill" data-lang="en">Made for ChatGPT</span><span class="pill" data-lang="zh">专为 ChatGPT 长对话设计</span></div>
       </section>
-      <section id="features" class="grid"><article class="card"><div class="icon">1</div><h3 data-lang="en">Side navigator</h3><h3 data-lang="zh">侧边导航</h3><p data-lang="en">Turn a long ChatGPT thread into clickable message nodes.</p><p data-lang="zh">把长对话整理成可点击的消息节点。</p></article><article class="card"><div class="icon">2</div><h3 data-lang="en">Hover preview</h3><h3 data-lang="zh">悬浮预览</h3><p data-lang="en">Preview each message before jumping, without losing your place.</p><p data-lang="zh">悬浮到节点即可预览内容，回看时不用反复滚动。</p></article><article class="card"><div class="icon">3</div><h3 data-lang="en">AI reply folding</h3><h3 data-lang="zh">AI 回复折叠</h3><p data-lang="en">Collapse long AI replies while keeping your own messages visible.</p><p data-lang="zh">折叠 AI 长回复，同时保留你的输入。</p></article></section>
-      <section class="grid"><article class="card"><div class="icon">4</div><h3 data-lang="en">Role filters</h3><h3 data-lang="zh">角色筛选</h3><p data-lang="en">Switch between All, AI, and Me to find the exact part of the thread.</p><p data-lang="zh">在全部、AI、我的输入三种视图之间切换。</p></article><article class="card"><div class="icon">5</div><h3 data-lang="en">Fast jump</h3><h3 data-lang="zh">快速跳转</h3><p data-lang="en">Click or drag the navigator to move through a long conversation.</p><p data-lang="zh">点击或拖动导航条，快速定位到对应消息。</p></article><article class="card"><div class="icon">6</div><h3 data-lang="en">Local only</h3><h3 data-lang="zh">本地运行</h3><p data-lang="en">Settings are saved locally. No analytics, no ads, no conversation upload.</p><p data-lang="zh">设置仅保存在本地；不做分析，不插广告，不上传对话内容。</p></article></section>
+      <section id="features" class="grid">
+        <article class="card"><div class="icon">1</div><h3 data-lang="en">Side navigator</h3><h3 data-lang="zh">侧边导航</h3><p data-lang="en">Turn a long ChatGPT thread into clickable message nodes.</p><p data-lang="zh">把长对话整理成可点击的消息节点。</p></article>
+        <article class="card"><div class="icon">2</div><h3 data-lang="en">Hover preview</h3><h3 data-lang="zh">悬浮预览</h3><p data-lang="en">Preview each message before jumping, without losing your place.</p><p data-lang="zh">悬浮到节点即可预览内容，回看时不用反复滚动。</p></article>
+        <article class="card"><div class="icon">3</div><h3 data-lang="en">AI reply folding</h3><h3 data-lang="zh">AI 回复折叠</h3><p data-lang="en">Collapse long AI replies while keeping your own messages visible.</p><p data-lang="zh">折叠 AI 长回复，同时保留你的输入。</p></article>
+      </section>
+      <section class="grid">
+        <article class="card"><div class="icon">4</div><h3 data-lang="en">Role filters</h3><h3 data-lang="zh">角色筛选</h3><p data-lang="en">Switch between All, AI, and Me to find the exact part of the thread.</p><p data-lang="zh">在全部、AI、我的输入三种视图之间切换。</p></article>
+        <article class="card"><div class="icon">5</div><h3 data-lang="en">Fast jump</h3><h3 data-lang="zh">快速跳转</h3><p data-lang="en">Click or drag the navigator to move through a long conversation.</p><p data-lang="zh">点击或拖动导航条，快速定位到对应消息。</p></article>
+        <article class="card"><div class="icon">6</div><h3 data-lang="en">Local only</h3><h3 data-lang="zh">本地运行</h3><p data-lang="en">Settings are saved locally. No analytics, no ads, no conversation upload.</p><p data-lang="zh">设置仅保存在本地；不做分析，不插广告，不上传对话内容。</p></article>
+      </section>
       <section id="privacy"><div class="note" data-lang="en">ThreadPilot runs in your browser. It does not upload your conversations, use analytics, or inject ads.</div><div class="note" data-lang="zh">ThreadPilot 在浏览器中运行，不上传你的对话内容，不做分析追踪，也不插入广告。</div></section>
     </main>
     <footer>ThreadPilot for ChatGPT · Long conversation navigator</footer>
