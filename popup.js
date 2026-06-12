@@ -7,6 +7,7 @@ const DEFAULTS = {
   filter: 'all',
   side: 'right',
   collapseHeight: 360,
+  autoScrollToBottom: true,
   performanceMode: true,
   aiFoldEnabled: true
 };
@@ -19,6 +20,7 @@ const controls = {
   side: document.querySelector('#side'),
   navOffset: document.querySelector('#navOffset'),
   collapseHeight: document.querySelector('#collapseHeight'),
+  autoScrollToBottom: document.querySelector('#autoScrollToBottom'),
   performanceMode: document.querySelector('#performanceMode')
 };
 
@@ -44,6 +46,7 @@ function load() {
     controls.side.value = items.side || 'right';
     controls.navOffset.value = Number(items.navOffset || 64);
     controls.collapseHeight.value = Number(items.collapseHeight || 360);
+    controls.autoScrollToBottom.checked = items.autoScrollToBottom !== false;
     controls.performanceMode.checked = items.performanceMode !== false;
   });
 }
@@ -70,6 +73,7 @@ controls.aiCollapseEnabled.addEventListener('change', () => save('aiCollapseEnab
 controls.filter.addEventListener('change', () => save('filter', controls.filter.value));
 controls.side.addEventListener('change', () => save('side', controls.side.value));
 controls.performanceMode.addEventListener('change', () => save('performanceMode', controls.performanceMode.checked));
+controls.autoScrollToBottom.addEventListener('change', () => save('autoScrollToBottom', controls.autoScrollToBottom.checked));
 controls.navOffset.addEventListener('change', () => {
   const value = Math.max(6, Math.min(140, Number(controls.navOffset.value || 64)));
   controls.navOffset.value = value;

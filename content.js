@@ -11,6 +11,7 @@
     filter: 'all',
     side: 'right',
     collapseHeight: 360,
+    autoScrollToBottom: true,
     performanceMode: true
   };
 
@@ -29,7 +30,9 @@
     expanded: new Set(),
     drag: false,
     timer: 0,
-    observer: null
+    observer: null,
+    locationKey: '',
+    bottomScrollTimer: 0
   };
 
   const $all = (root, selector) => {
@@ -269,9 +272,9 @@
     target.style.removeProperty('--cn-fold-height');
   }
 
-  function buttonFor(target, key) {
-    const next = target.nextElementSibling;
-    if (next?.dataset?.cnMoreButton === 'true' && next.dataset.cnFoldKey === key) return next;
+  function foldButtonFor(item, key) {
+    const existing = item.root.querySelector(`[data-cn-more-button="true"][data-cn-fold-key="${CSS.escape(key)}"]`);
+    if (existing) return existing;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'cn-more-button';
@@ -282,12 +285,13 @@
       else state.expanded.add(key);
       applyFolds();
     });
-    target.insertAdjacentElement('afterend', btn);
+    item.root.appendChild(btn);
     return btn;
   }
 
   function applyFolds() {
     const activeTargets = new Set();
+    const activeKeys = new Set();
     if (!state.settings.aiCollapseEnabled) {
       document.querySelectorAll('.cn-fold-target').forEach(clearFold);
       document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => btn.remove());
@@ -301,17 +305,17 @@
       const shouldFold = target.scrollHeight >= h + 40 || getReadableText(target, 1200).length >= 520;
       if (!shouldFold) {
         clearFold(target);
-        const btn = target.nextElementSibling;
-        if (btn?.dataset?.cnMoreButton === 'true') btn.remove();
+        item.root.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => btn.remove());
         return;
       }
 
       activeTargets.add(target);
       const key = item.key;
+      activeKeys.add(key);
       target.classList.add('cn-fold-target', 'cn-collapsed');
       target.classList.toggle('cn-expanded', state.expanded.has(key));
       target.style.setProperty('--cn-fold-height', `${h}px`);
-      const btn = buttonFor(target, key);
+      const btn = foldButtonFor(item, key);
       const expanded = state.expanded.has(key);
       btn.textContent = expanded ? '收起' : '展开';
       btn.setAttribute('aria-label', expanded ? '收起这条 AI 回复' : '展开这条 AI 回复');
@@ -321,8 +325,7 @@
       if (!activeTargets.has(el)) clearFold(el);
     });
     document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => {
-      const prev = btn.previousElementSibling;
-      if (!prev || !activeTargets.has(prev)) btn.remove();
+      if (!activeKeys.has(btn.dataset.cnFoldKey)) btn.remove();
     });
   }
 
@@ -383,6 +386,30 @@
     });
   }
 
+  function currentLocationKey() {
+    return `${location.pathname}${location.search}`;
+  }
+
+  function scrollConversationToBottom() {
+    if (!state.settings.autoScrollToBottom || !state.messages.length) return;
+    const last = state.messages[state.messages.length - 1];
+    requestAnimationFrame(() => {
+      last?.root?.scrollIntoView({ block: 'end', behavior: 'auto' });
+      const scroller = document.scrollingElement || document.documentElement;
+      scroller.scrollTop = scroller.scrollHeight;
+      setTimeout(updateActive, 80);
+    });
+  }
+
+  function maybeScrollNewConversationToBottom() {
+    const key = currentLocationKey();
+    if (state.locationKey === key) return;
+    state.locationKey = key;
+    clearTimeout(state.bottomScrollTimer);
+    state.bottomScrollTimer = setTimeout(scrollConversationToBottom, 450);
+    setTimeout(scrollConversationToBottom, 1400);
+  }
+
   function applySettings() {
     ensureUi();
     state.root.classList.toggle('cn-disabled', !state.settings.enabled);
@@ -397,6 +424,7 @@
     applySettings();
     applyFolds();
     render();
+    maybeScrollNewConversationToBottom();
   }
 
   function rebuildSoon(delay = 250) {
@@ -413,6 +441,10 @@
     state.observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     window.addEventListener('scroll', updateActive, true);
     window.addEventListener('resize', () => rebuildSoon(200));
+    window.addEventListener('popstate', () => rebuildSoon(120));
+    setInterval(() => {
+      if (state.locationKey !== currentLocationKey()) rebuildSoon(120);
+    }, 800);
   }
 
   document.addEventListener('keydown', (e) => {
