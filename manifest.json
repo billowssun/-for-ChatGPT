@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "ThreadPilot for ChatGPT",
+  "short_name": "ThreadPilot",
+  "version": "1.0",
+  "description": "Navigate, preview, filter, and collapse long ChatGPT conversations.",
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "ThreadPilot for ChatGPT",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "css": ["styles.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "homepage_url": "https://github.com/billowssun/threadpilot-for-chatgpt"
+}
