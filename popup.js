@@ -28,6 +28,12 @@ const helpText = document.querySelector('#helpText');
 const status = document.querySelector('#status');
 const aboutBtn = document.querySelector('#aboutBtn');
 const resetBtn = document.querySelector('#resetBtn');
+const summary = {
+  enabled: document.querySelector('#summaryEnabled'),
+  filter: document.querySelector('#summaryFilter'),
+  fold: document.querySelector('#summaryFold'),
+  perf: document.querySelector('#summaryPerf')
+};
 
 function setStatus(text) {
   status.textContent = text || '';
@@ -48,7 +54,21 @@ function load() {
     controls.collapseHeight.value = Number(items.collapseHeight || 360);
     controls.autoScrollToBottom.checked = items.autoScrollToBottom !== false;
     controls.performanceMode.checked = items.performanceMode !== false;
+    renderSummary(items, aiCollapse);
   });
+}
+
+function renderSummary(items, aiCollapse) {
+  const enabled = items.enabled !== false;
+  const filterLabel = items.filter === 'assistant' ? 'AI' : items.filter === 'user' ? '我' : '全部';
+  summary.enabled.textContent = enabled ? '导航开启' : '导航关闭';
+  summary.filter.textContent = filterLabel;
+  summary.fold.textContent = aiCollapse ? '折叠开启' : '折叠关闭';
+  summary.perf.textContent = items.performanceMode !== false ? '流畅模式' : '即时刷新';
+  summary.enabled.classList.toggle('is-on', enabled);
+  summary.filter.classList.toggle('is-on', items.filter !== 'all');
+  summary.fold.classList.toggle('is-on', aiCollapse);
+  summary.perf.classList.toggle('is-on', items.performanceMode !== false);
 }
 
 function save(key, value) {

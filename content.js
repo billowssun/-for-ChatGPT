@@ -28,11 +28,17 @@
     messages: [],
     visible: [],
     expanded: new Set(),
+    textCache: new Map(),
     drag: false,
     timer: 0,
+    foldTimer: 0,
     observer: null,
     locationKey: '',
-    bottomScrollTimer: 0
+    bottomScrollTimer: 0,
+    bottomScrollInterval: 0,
+    bottomScrollUntil: 0,
+    bottomLastHeight: 0,
+    bottomStableTicks: 0
   };
 
   const $all = (root, selector) => {
@@ -127,6 +133,19 @@
       .slice(0, limit);
   }
 
+  function ensureItemText(item, limit = 240) {
+    if (!item) return '';
+    const cached = state.textCache.get(item.key);
+    if (cached) {
+      item.text = cached;
+      return cached.slice(0, limit);
+    }
+    const value = getReadableText(item.content || item.root, Math.max(limit, 240));
+    if (value) state.textCache.set(item.key, value);
+    item.text = value;
+    return value.slice(0, limit);
+  }
+
   function detectRole(root) {
     const roleNode = root.matches?.('[data-message-author-role]') ? root : root.querySelector?.('[data-message-author-role]');
     const role = roleNode?.getAttribute('data-message-author-role');
@@ -160,8 +179,10 @@
     roots.sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
     return roots.map((root, index) => {
       const { role, content } = detectRole(root);
-      return { root, content, role, index, number: index + 1, key: messageKey(root, role, index), text: getReadableText(content || root, 240) };
-    }).filter(x => x.text.length > 1);
+      const key = messageKey(root, role, index);
+      const cachedText = state.textCache.get(key) || '';
+      return { root, content, role, index, number: index + 1, key, text: cachedText };
+    }).filter(x => x.role === 'assistant' || x.role === 'user' || ensureItemText(x, 80).length > 1);
   }
 
   function ensureUi() {
@@ -256,7 +277,7 @@
       dot.className = `cn-dot cn-${item.role}`;
       dot.dataset.globalIndex = String(item.index);
       dot.style.top = `${itemPosition(item, i, count)}%`;
-      dot.title = `${roleName(item.role)} ${i + 1}/${count} · ${item.text.slice(0, 60)}`;
+      dot.title = `${roleName(item.role)} ${i + 1}/${count}${item.text ? ` · ${item.text.slice(0, 60)}` : ''}`;
       dot.addEventListener('mouseenter', (e) => showPreview(item, e.clientX, e.clientY));
       dot.addEventListener('mousemove', (e) => showPreview(item, e.clientX, e.clientY));
       dot.addEventListener('mouseleave', () => hidePreview(100));
@@ -279,10 +300,11 @@
   function showPreview(item, x, y) {
     const p = state.preview;
     if (!p) return;
+    const body = ensureItemText(item, 240);
     p.dataset.role = item.role;
     p.querySelector('.cn-preview-badge').textContent = roleName(item.role);
     p.querySelector('.cn-preview-index').textContent = previewIndex(item);
-    p.querySelector('.cn-preview-body').textContent = item.text.length > 160 ? `${item.text.slice(0, 160)}…` : item.text;
+    p.querySelector('.cn-preview-body').textContent = body.length > 160 ? `${body.slice(0, 160)}…` : body;
     const width = 348;
     const left = clamp(x - width - 14, 14, window.innerWidth - width - 14);
     const top = clamp(y, 90, window.innerHeight - 90);
@@ -415,6 +437,15 @@
     });
   }
 
+  function scheduleFolds(delay) {
+    clearTimeout(state.foldTimer);
+    if (!state.settings.aiCollapseEnabled) {
+      applyFolds();
+      return;
+    }
+    state.foldTimer = setTimeout(applyFolds, delay);
+  }
+
   function isOfficialNavCandidate(el) {
     if (!el || isOur(el) || closest(el, `#${EXT_ID}, form, textarea, [contenteditable="true"]`)) return false;
     const rect = el.getBoundingClientRect();
@@ -487,13 +518,41 @@
     });
   }
 
-  function maybeScrollNewConversationToBottom() {
-    const key = currentLocationKey();
-    if (state.locationKey === key) return;
-    state.locationKey = key;
+  function stopBottomLock() {
     clearTimeout(state.bottomScrollTimer);
-    state.bottomScrollTimer = setTimeout(scrollConversationToBottom, 450);
-    setTimeout(scrollConversationToBottom, 1400);
+    clearInterval(state.bottomScrollInterval);
+    state.bottomScrollTimer = 0;
+    state.bottomScrollInterval = 0;
+    state.bottomScrollUntil = 0;
+    state.bottomLastHeight = 0;
+    state.bottomStableTicks = 0;
+  }
+
+  function bottomLockTick() {
+    if (!state.settings.autoScrollToBottom || Date.now() > state.bottomScrollUntil) {
+      stopBottomLock();
+      return;
+    }
+    const scroller = document.scrollingElement || document.documentElement;
+    const height = scroller.scrollHeight;
+    state.bottomStableTicks = Math.abs(height - state.bottomLastHeight) <= 2 ? state.bottomStableTicks + 1 : 0;
+    state.bottomLastHeight = height;
+    scrollConversationToBottom();
+    if (state.bottomStableTicks >= 5) stopBottomLock();
+  }
+
+  function startBottomLock() {
+    stopBottomLock();
+    if (!state.settings.autoScrollToBottom) return;
+    const scroller = document.scrollingElement || document.documentElement;
+    state.bottomLastHeight = scroller.scrollHeight;
+    state.bottomScrollUntil = Date.now() + (state.settings.performanceMode ? 6200 : 4200);
+    state.bottomScrollTimer = setTimeout(bottomLockTick, 260);
+    state.bottomScrollInterval = setInterval(bottomLockTick, 520);
+  }
+
+  function maybeScrollNewConversationToBottom() {
+    startBottomLock();
   }
 
   function applySettings() {
@@ -506,11 +565,17 @@
 
   function rebuild() {
     ensureUi();
+    const key = currentLocationKey();
+    const locationChanged = state.locationKey !== key;
+    if (locationChanged) {
+      state.locationKey = key;
+      state.textCache.clear();
+    }
     state.messages = collectMessages();
     applySettings();
-    applyFolds();
     render();
-    maybeScrollNewConversationToBottom();
+    if (locationChanged) maybeScrollNewConversationToBottom();
+    scheduleFolds(state.settings.performanceMode ? 900 : 420);
   }
 
   function rebuildSoon(delay = 250) {
