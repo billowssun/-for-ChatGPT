@@ -44,6 +44,13 @@
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const text = (s) => String(s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
   const isOur = (el) => !!(el && (el.id === EXT_ID || closest(el, `#${EXT_ID}`) || closest(el, '[data-cn-more-button="true"]')));
+  const MESSAGE_CONTENT_SELECTORS = [
+    '[data-message-author-role] .markdown',
+    '[data-message-author-role] [data-message-id]',
+    '[data-message-author-role] [data-testid="conversation-turn-content"]',
+    '[data-message-author-role] [class*="whitespace-pre-wrap"]',
+    '[data-message-author-role]'
+  ];
 
   const OFFICIAL_NAV_SELECTORS = [
     DEFAULTS.officialNavSelector,
@@ -75,16 +82,57 @@
     return role === 'assistant' ? 'AI' : role === 'user' ? '我' : '消息';
   }
 
+  function displayFilterName() {
+    if (state.settings.filter === 'assistant') return 'AI';
+    if (state.settings.filter === 'user') return '我';
+    return '全部';
+  }
+
+  function previewIndex(item) {
+    const visibleIndex = state.visible.findIndex(m => m.key === item.key);
+    const visibleNumber = visibleIndex >= 0 ? visibleIndex + 1 : item.number;
+    if (state.settings.filter === 'all') return `${item.number}/${state.messages.length}`;
+    return `${displayFilterName()} ${visibleNumber}/${state.visible.length} · 全部 ${item.number}/${state.messages.length}`;
+  }
+
+  function contentNodeFor(root, roleNode) {
+    if (!root) return roleNode || root;
+    for (const selector of MESSAGE_CONTENT_SELECTORS) {
+      const node = root.querySelector?.(selector);
+      if (node && !isOur(node)) return node;
+    }
+    return roleNode || root;
+  }
+
   function getReadableText(el, limit = 220) {
     if (!el) return '';
-    const raw = text(el.innerText || el.textContent || '');
-    return raw.replace(/^(ChatGPT|Assistant|You|用户|助手|我)\s*[:：]?\s*/i, '').slice(0, limit);
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll?.([
+      'button',
+      'svg',
+      'img',
+      'pre .hljs-copy-button',
+      '[aria-hidden="true"]',
+      '[data-cn-more-button="true"]',
+      '[data-testid*="copy"]',
+      '[data-testid*="feedback"]',
+      '[data-testid*="share"]',
+      '[data-testid*="voice"]'
+    ].join(',')).forEach(node => node.remove());
+    const raw = text(clone.innerText || clone.textContent || '');
+    return raw
+      .replace(/^(ChatGPT|Assistant|You|用户|助手|我)\s*[:：]?\s*/i, '')
+      .replace(/\b(Copy|Copied|Good response|Bad response|Read aloud|Edit message)\b|复制|已复制|朗读|编辑|赞|踩/gi, '')
+      .trim()
+      .slice(0, limit);
   }
 
   function detectRole(root) {
     const roleNode = root.matches?.('[data-message-author-role]') ? root : root.querySelector?.('[data-message-author-role]');
     const role = roleNode?.getAttribute('data-message-author-role');
-    return role === 'assistant' || role === 'user' ? { role, content: roleNode } : { role: 'message', content: root };
+    return role === 'assistant' || role === 'user'
+      ? { role, content: contentNodeFor(root, roleNode) }
+      : { role: 'message', content: root };
   }
 
   function messageKey(root, role, index) {
@@ -101,6 +149,7 @@
     const add = (node) => {
       const root = closest(node, 'article[data-testid^="conversation-turn-"]') || closest(node, '[data-testid^="conversation-turn-"]') || closest(node, 'article') || node;
       if (!root || seen.has(root) || isOur(root)) return;
+      if (root.querySelector?.('[data-cn-hidden-official-nav="true"]')) return;
       const rect = root.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
       seen.add(root);
@@ -194,14 +243,17 @@
       dot.className = `cn-dot cn-${item.role}`;
       dot.dataset.globalIndex = String(item.index);
       dot.style.top = `${count <= 1 ? 0 : (i / (count - 1)) * 100}%`;
-      dot.title = `${roleName(item.role)} · ${item.text.slice(0, 60)}`;
+      dot.title = `${roleName(item.role)} ${i + 1}/${count} · ${item.text.slice(0, 60)}`;
       dot.addEventListener('mouseenter', (e) => showPreview(item, e.clientX, e.clientY));
       dot.addEventListener('mousemove', (e) => showPreview(item, e.clientX, e.clientY));
       dot.addEventListener('mouseleave', () => hidePreview(100));
       dot.addEventListener('click', (e) => { e.preventDefault(); scrollTo(item); });
       state.dots.appendChild(dot);
     });
-    state.count.textContent = String(state.messages.length);
+    state.count.textContent = String(state.visible.length);
+    state.count.title = state.settings.filter === 'all'
+      ? `全部 ${state.messages.length} 条消息`
+      : `${displayFilterName()} ${state.visible.length} 条 · 全部 ${state.messages.length} 条`;
     state.filterBtn.dataset.filter = state.settings.filter;
     state.filterBtn.textContent = state.settings.filter === 'assistant' ? 'AI' : state.settings.filter === 'user' ? '我' : '全';
     state.foldBtn.classList.toggle('is-on', state.settings.aiCollapseEnabled);
@@ -216,7 +268,7 @@
     if (!p) return;
     p.dataset.role = item.role;
     p.querySelector('.cn-preview-badge').textContent = roleName(item.role);
-    p.querySelector('.cn-preview-index').textContent = `${item.number}/${state.messages.length}`;
+    p.querySelector('.cn-preview-index').textContent = previewIndex(item);
     p.querySelector('.cn-preview-body').textContent = item.text.length > 160 ? `${item.text.slice(0, 160)}…` : item.text;
     const width = 348;
     const left = clamp(x - width - 14, 14, window.innerWidth - width - 14);
