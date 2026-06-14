@@ -201,8 +201,15 @@
     const at = (event) => {
       const rect = state.track.getBoundingClientRect();
       const p = clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0, 1);
-      const i = clamp(Math.round(p * (state.visible.length - 1)), 0, Math.max(0, state.visible.length - 1));
-      return state.visible[i];
+      if (state.settings.filter === 'all') {
+        const i = clamp(Math.round(p * (state.visible.length - 1)), 0, Math.max(0, state.visible.length - 1));
+        return state.visible[i];
+      }
+      const targetIndex = p * Math.max(0, state.messages.length - 1);
+      return state.visible.reduce((nearest, item) => {
+        if (!nearest) return item;
+        return Math.abs(item.index - targetIndex) < Math.abs(nearest.index - targetIndex) ? item : nearest;
+      }, null);
     };
     state.track.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -230,6 +237,12 @@
     return [...state.messages];
   }
 
+  function itemPosition(item, fallbackIndex = 0, fallbackCount = state.visible.length) {
+    const total = state.messages.length;
+    if (total > 1 && Number.isFinite(item?.index)) return (item.index / (total - 1)) * 100;
+    return fallbackCount <= 1 ? 0 : (fallbackIndex / (fallbackCount - 1)) * 100;
+  }
+
   function render() {
     ensureUi();
     state.visible = visibleMessages();
@@ -242,7 +255,7 @@
       dot.type = 'button';
       dot.className = `cn-dot cn-${item.role}`;
       dot.dataset.globalIndex = String(item.index);
-      dot.style.top = `${count <= 1 ? 0 : (i / (count - 1)) * 100}%`;
+      dot.style.top = `${itemPosition(item, i, count)}%`;
       dot.title = `${roleName(item.role)} ${i + 1}/${count} · ${item.text.slice(0, 60)}`;
       dot.addEventListener('mouseenter', (e) => showPreview(item, e.clientX, e.clientY));
       dot.addEventListener('mousemove', (e) => showPreview(item, e.clientX, e.clientY));
@@ -307,7 +320,7 @@
 
     const vi = previousVisibleIndex >= 0 ? previousVisibleIndex : nearestVisibleIndex;
     const active = state.visible[vi];
-    const pct = state.visible.length <= 1 ? 0 : (vi / (state.visible.length - 1)) * 100;
+    const pct = itemPosition(active, vi, state.visible.length);
     state.thumb.style.top = `${pct}%`;
     state.dots?.querySelectorAll('.cn-dot').forEach((dot) => {
       dot.classList.toggle('is-active', Number(dot.dataset.globalIndex) === active?.index);
