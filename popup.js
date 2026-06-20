@@ -4,7 +4,7 @@ const DEFAULTS = {
   officialNavSelector: 'div.fixed.top-1\\/2.z-20.-translate-y-1\\/2.inset-e-4',
   navOffset: 64,
   aiCollapseEnabled: true,
-  filter: 'all',
+  filter: 'user',
   side: 'right',
   collapseHeight: 360,
   autoScrollToBottom: true,
@@ -16,7 +16,6 @@ const controls = {
   enabled: document.querySelector('#enabled'),
   hideOfficialNav: document.querySelector('#hideOfficialNav'),
   aiCollapseEnabled: document.querySelector('#aiCollapseEnabled'),
-  filter: document.querySelector('#filter'),
   side: document.querySelector('#side'),
   navOffset: document.querySelector('#navOffset'),
   collapseHeight: document.querySelector('#collapseHeight'),
@@ -26,11 +25,11 @@ const controls = {
 
 const helpText = document.querySelector('#helpText');
 const status = document.querySelector('#status');
+const githubBtn = document.querySelector('#githubBtn');
 const aboutBtn = document.querySelector('#aboutBtn');
 const resetBtn = document.querySelector('#resetBtn');
 const summary = {
   enabled: document.querySelector('#summaryEnabled'),
-  filter: document.querySelector('#summaryFilter'),
   fold: document.querySelector('#summaryFold'),
   perf: document.querySelector('#summaryPerf')
 };
@@ -48,7 +47,6 @@ function load() {
     controls.enabled.checked = Boolean(items.enabled);
     controls.hideOfficialNav.checked = Boolean(items.hideOfficialNav);
     controls.aiCollapseEnabled.checked = aiCollapse;
-    controls.filter.value = items.filter || 'all';
     controls.side.value = items.side || 'right';
     controls.navOffset.value = Number(items.navOffset || 64);
     controls.collapseHeight.value = Number(items.collapseHeight || 360);
@@ -60,13 +58,10 @@ function load() {
 
 function renderSummary(items, aiCollapse) {
   const enabled = items.enabled !== false;
-  const filterLabel = items.filter === 'assistant' ? 'AI' : items.filter === 'user' ? '我' : '全部';
   summary.enabled.textContent = enabled ? '导航开启' : '导航关闭';
-  summary.filter.textContent = filterLabel;
   summary.fold.textContent = aiCollapse ? '折叠开启' : '折叠关闭';
   summary.perf.textContent = items.performanceMode !== false ? '流畅模式' : '即时刷新';
   summary.enabled.classList.toggle('is-on', enabled);
-  summary.filter.classList.toggle('is-on', items.filter !== 'all');
   summary.fold.classList.toggle('is-on', aiCollapse);
   summary.perf.classList.toggle('is-on', items.performanceMode !== false);
 }
@@ -90,7 +85,6 @@ function saveMany(payload, message = '已保存') {
 controls.enabled.addEventListener('change', () => save('enabled', controls.enabled.checked));
 controls.hideOfficialNav.addEventListener('change', () => save('hideOfficialNav', controls.hideOfficialNav.checked));
 controls.aiCollapseEnabled.addEventListener('change', () => save('aiCollapseEnabled', controls.aiCollapseEnabled.checked));
-controls.filter.addEventListener('change', () => save('filter', controls.filter.value));
 controls.side.addEventListener('change', () => save('side', controls.side.value));
 controls.performanceMode.addEventListener('change', () => save('performanceMode', controls.performanceMode.checked));
 controls.autoScrollToBottom.addEventListener('change', () => save('autoScrollToBottom', controls.autoScrollToBottom.checked));
@@ -109,6 +103,10 @@ document.querySelectorAll('[data-tip]').forEach((row) => {
   row.addEventListener('mouseenter', () => {
     helpText.textContent = row.getAttribute('data-tip') || '';
   });
+});
+
+githubBtn.addEventListener('click', () => {
+  chrome.tabs.create({ url: 'https://github.com/billowssun/threadpilot-for-chatgpt' });
 });
 
 aboutBtn.addEventListener('click', () => {

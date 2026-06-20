@@ -8,7 +8,7 @@
     officialNavSelector: 'div.fixed.top-1\\/2.z-20.-translate-y-1\\/2.inset-e-4',
     navOffset: 64,
     aiCollapseEnabled: true,
-    filter: 'all',
+    filter: 'user',
     side: 'right',
     collapseHeight: 360,
     autoScrollToBottom: true,
@@ -22,7 +22,6 @@
     dots: null,
     thumb: null,
     preview: null,
-    filterBtn: null,
     foldBtn: null,
     count: null,
     messages: [],
@@ -30,6 +29,7 @@
     expanded: new Set(),
     textCache: new Map(),
     drag: false,
+    lastScrollKey: '',
     timer: 0,
     foldTimer: 0,
     observer: null,
@@ -71,12 +71,17 @@
       if (typeof items.aiFoldEnabled === 'boolean' && typeof items.aiCollapseEnabled !== 'boolean') {
         state.settings.aiCollapseEnabled = items.aiFoldEnabled;
       }
+      if (state.settings.filter !== 'user') {
+        state.settings.filter = 'user';
+        chrome.storage.sync.set({ filter: 'user' });
+      }
       applySettings();
       rebuild();
     });
   }
 
   function saveSettings(patch) {
+    if ('filter' in patch) patch.filter = 'user';
     state.settings = { ...state.settings, ...patch };
     chrome.storage.sync.set(patch, () => {
       applySettings();
@@ -89,15 +94,12 @@
   }
 
   function displayFilterName() {
-    if (state.settings.filter === 'assistant') return 'AI';
-    if (state.settings.filter === 'user') return '我';
-    return '全部';
+    return '我';
   }
 
   function previewIndex(item) {
     const visibleIndex = state.visible.findIndex(m => m.key === item.key);
     const visibleNumber = visibleIndex >= 0 ? visibleIndex + 1 : item.number;
-    if (state.settings.filter === 'all') return `${item.number}/${state.messages.length}`;
     return `${displayFilterName()} ${visibleNumber}/${state.visible.length} · 全部 ${item.number}/${state.messages.length}`;
   }
 
@@ -190,8 +192,7 @@
     const root = document.createElement('aside');
     root.id = EXT_ID;
     root.innerHTML = `
-      <button class="cn-filter-btn" type="button" title="切换导航视图：全部 / AI / 我">全</button>
-      <div class="cn-track" title="点击或拖动，快速跳到对应消息"><div class="cn-line"></div><div class="cn-dots"></div><div class="cn-thumb"></div></div>
+      <div class="cn-track" title="点击或拖动，快速跳到我的输入"><div class="cn-line"></div><div class="cn-dots"></div><div class="cn-thumb"></div></div>
       <div class="cn-count">0</div>
       <button class="cn-fold-btn" type="button" title="开启或关闭 AI 长回复折叠">折叠</button>
       <div class="cn-preview" aria-hidden="true"><div class="cn-preview-meta"><span class="cn-preview-badge"></span><span class="cn-preview-index"></span></div><div class="cn-preview-body"></div><div class="cn-preview-hint">点击节点即可跳转</div></div>
@@ -202,15 +203,9 @@
     state.dots = root.querySelector('.cn-dots');
     state.thumb = root.querySelector('.cn-thumb');
     state.preview = root.querySelector('.cn-preview');
-    state.filterBtn = root.querySelector('.cn-filter-btn');
     state.foldBtn = root.querySelector('.cn-fold-btn');
     state.count = root.querySelector('.cn-count');
 
-    state.filterBtn.addEventListener('click', () => {
-      const order = ['all', 'assistant', 'user'];
-      const next = order[(order.indexOf(state.settings.filter) + 1) % order.length];
-      saveSettings({ filter: next });
-    });
     state.foldBtn.addEventListener('click', () => {
       const next = !state.settings.aiCollapseEnabled;
       saveSettings({ aiCollapseEnabled: next, aiFoldEnabled: next });
@@ -222,10 +217,6 @@
     const at = (event) => {
       const rect = state.track.getBoundingClientRect();
       const p = clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0, 1);
-      if (state.settings.filter === 'all') {
-        const i = clamp(Math.round(p * (state.visible.length - 1)), 0, Math.max(0, state.visible.length - 1));
-        return state.visible[i];
-      }
       const targetIndex = p * Math.max(0, state.messages.length - 1);
       return state.visible.reduce((nearest, item) => {
         if (!nearest) return item;
@@ -242,10 +233,11 @@
     state.track.addEventListener('pointermove', (e) => {
       const item = at(e);
       if (item) showPreview(item, e.clientX, e.clientY);
-      if (state.drag && item) scrollTo(item);
+      if (state.drag && item) scrollTo(item, 'auto');
     });
     state.track.addEventListener('pointerup', (e) => {
       state.drag = false;
+      state.lastScrollKey = '';
       state.track.releasePointerCapture?.(e.pointerId);
       hidePreview(160);
     });
@@ -253,9 +245,7 @@
   }
 
   function visibleMessages() {
-    if (state.settings.filter === 'assistant') return state.messages.filter(m => m.role === 'assistant');
-    if (state.settings.filter === 'user') return state.messages.filter(m => m.role === 'user');
-    return [...state.messages];
+    return state.messages.filter(m => m.role === 'user');
   }
 
   function itemPosition(item, fallbackIndex = 0, fallbackCount = state.visible.length) {
@@ -285,11 +275,7 @@
       state.dots.appendChild(dot);
     });
     state.count.textContent = String(state.visible.length);
-    state.count.title = state.settings.filter === 'all'
-      ? `全部 ${state.messages.length} 条消息`
-      : `${displayFilterName()} ${state.visible.length} 条 · 全部 ${state.messages.length} 条`;
-    state.filterBtn.dataset.filter = state.settings.filter;
-    state.filterBtn.textContent = state.settings.filter === 'assistant' ? 'AI' : state.settings.filter === 'user' ? '我' : '全';
+    state.count.title = `我的输入 ${state.visible.length} 条 · 全部 ${state.messages.length} 条`;
     state.foldBtn.classList.toggle('is-on', state.settings.aiCollapseEnabled);
     state.foldBtn.textContent = state.settings.aiCollapseEnabled ? '折叠' : '展开';
     state.foldBtn.title = state.settings.aiCollapseEnabled ? '关闭 AI 长回复折叠' : '开启 AI 长回复折叠';
@@ -317,8 +303,11 @@
     setTimeout(() => { if (!state.drag) state.preview?.classList.remove('is-visible'); }, delay);
   }
 
-  function scrollTo(item) {
-    item?.root?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  function scrollTo(item, behavior = 'smooth') {
+    if (!item?.root) return;
+    if (state.drag && state.lastScrollKey === item.key) return;
+    state.lastScrollKey = item.key;
+    item.root.scrollIntoView({ block: 'start', behavior });
     setTimeout(updateActive, 180);
   }
 

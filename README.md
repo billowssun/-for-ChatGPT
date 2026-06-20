@@ -12,14 +12,14 @@ Choose a language:
 
 ## Overview
 
-ThreadPilot for ChatGPT is a lightweight browser extension for navigating long ChatGPT conversations. It adds a compact side navigator, message previews, role filters, and folding controls so long threads stay easier to scan.
+ThreadPilot for ChatGPT is a lightweight browser extension for navigating long ChatGPT conversations. It adds a compact side navigator for your prompts, message previews, and folding controls so long threads stay easier to scan.
 
 ## Features
 
 - Side navigator for long conversations
 - Hover previews for message nodes
 - Click or drag to jump between messages
-- Filters for All / AI / Me
+- Navigator focused on your prompts by default
 - Collapse and expand long AI replies
 - Per-message More / Collapse controls
 - Optional hiding for ChatGPT native controls
@@ -31,6 +31,7 @@ ThreadPilot for ChatGPT is a lightweight browser extension for navigating long C
 Get the latest version from:
 
 - Website: https://billowssun.github.io/threadpilot-for-chatgpt/
+- GitHub: https://github.com/billowssun/threadpilot-for-chatgpt
 - Releases: https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest
 
 After installation, open or refresh https://chatgpt.com/.
@@ -61,14 +62,14 @@ ThreadPilot only uses local browser storage for extension preferences. It does n
 
 ## 简介
 
-ThreadPilot for ChatGPT 是一个轻量浏览器扩展，用来改善 ChatGPT 长对话的阅读和定位体验。它会添加简洁的侧边导航、消息预览、角色筛选和折叠控制，让长线程更容易浏览。
+ThreadPilot for ChatGPT 是一个轻量浏览器扩展，用来改善 ChatGPT 长对话的阅读和定位体验。它会添加聚焦你输入内容的侧边导航、消息预览和折叠控制，让长线程更容易浏览。
 
 ## 功能
 
 - 为长对话生成侧边导航
 - 悬停预览消息节点
 - 点击或拖动快速跳转
-- 按全部 / AI / 我筛选消息
+- 默认只导航你的输入内容
 - 折叠和展开较长的 AI 回复
 - 每条消息提供更多 / 收起控制
 - 可选择隐藏 ChatGPT 原生控件
@@ -80,6 +81,7 @@ ThreadPilot for ChatGPT 是一个轻量浏览器扩展，用来改善 ChatGPT �
 获取最新版本：
 
 - 官网：https://billowssun.github.io/threadpilot-for-chatgpt/
+- GitHub：https://github.com/billowssun/threadpilot-for-chatgpt
 - 最新版本：https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest
 
 安装后，打开或刷新 https://chatgpt.com/。
