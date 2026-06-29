@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ThreadPilot for ChatGPT",
   "short_name": "ThreadPilot",
-  "version": "2.1",
+  "version": "2.2",
   "description": "Navigate long ChatGPT threads with a prompt-focused side map, previews, and AI reply folding.",
   "permissions": ["storage"],
   "icons": {
