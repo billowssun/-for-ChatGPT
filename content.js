@@ -4,7 +4,7 @@
   const EXT_ID = 'conversation-navigator';
   const DEFAULTS = {
     enabled: true,
-    hideOfficialNav: true,
+    hideOfficialNav: false,
     officialNavSelector: 'div.fixed.top-1\\/2.z-20.-translate-y-1\\/2.inset-e-4',
     navOffset: 64,
     aiCollapseEnabled: true,
@@ -50,6 +50,7 @@
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const text = (s) => String(s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
   const isOur = (el) => !!(el && (el.id === EXT_ID || closest(el, `#${EXT_ID}`) || closest(el, '[data-cn-more-button="true"]')));
+  const isEditableTarget = (el) => !!closest(el, 'input, textarea, select, [contenteditable="true"], [role="textbox"]');
   const MESSAGE_CONTENT_SELECTORS = [
     '[data-message-author-role] .markdown',
     '[data-message-author-role] [data-message-id]',
@@ -206,6 +207,14 @@
     state.foldBtn = root.querySelector('.cn-fold-btn');
     state.count = root.querySelector('.cn-count');
 
+    state.track.setAttribute('role', 'slider');
+    state.track.setAttribute('tabindex', '0');
+    state.track.setAttribute('aria-label', 'ThreadPilot 我的输入导航');
+    state.track.setAttribute('aria-orientation', 'vertical');
+    state.track.setAttribute('aria-valuemin', '1');
+    state.track.setAttribute('aria-valuemax', '1');
+    state.track.setAttribute('aria-valuenow', '1');
+
     state.foldBtn.addEventListener('click', () => {
       const next = !state.settings.aiCollapseEnabled;
       saveSettings({ aiCollapseEnabled: next, aiFoldEnabled: next });
@@ -242,6 +251,23 @@
       hidePreview(160);
     });
     state.track.addEventListener('pointerleave', () => { if (!state.drag) hidePreview(100); });
+    state.track.addEventListener('keydown', (e) => {
+      if (!state.visible.length) return;
+      const current = currentVisibleIndex();
+      const keyMap = {
+        ArrowDown: current + 1,
+        ArrowRight: current + 1,
+        PageDown: current + 3,
+        ArrowUp: current - 1,
+        ArrowLeft: current - 1,
+        PageUp: current - 3,
+        Home: 0,
+        End: state.visible.length - 1
+      };
+      if (!(e.key in keyMap)) return;
+      e.preventDefault();
+      jumpToVisibleIndex(keyMap[e.key]);
+    });
   }
 
   function visibleMessages() {
@@ -267,10 +293,15 @@
       dot.className = `cn-dot cn-${item.role}`;
       dot.dataset.globalIndex = String(item.index);
       dot.style.top = `${itemPosition(item, i, count)}%`;
-      dot.title = `${roleName(item.role)} ${i + 1}/${count}${item.text ? ` · ${item.text.slice(0, 60)}` : ''}`;
+      const itemText = ensureItemText(item, 80);
+      const dotLabel = `${roleName(item.role)} ${i + 1}/${count}${itemText ? ` - ${itemText.slice(0, 60)}` : ''}`;
+      dot.title = dotLabel;
+      dot.setAttribute('aria-label', `跳到${dotLabel}`);
       dot.addEventListener('mouseenter', (e) => showPreview(item, e.clientX, e.clientY));
       dot.addEventListener('mousemove', (e) => showPreview(item, e.clientX, e.clientY));
       dot.addEventListener('mouseleave', () => hidePreview(100));
+      dot.addEventListener('focus', () => showPreviewForElement(item, dot));
+      dot.addEventListener('blur', () => hidePreview(80));
       dot.addEventListener('click', (e) => { e.preventDefault(); scrollTo(item); });
       state.dots.appendChild(dot);
     });
@@ -299,6 +330,12 @@
     p.classList.add('is-visible');
   }
 
+  function showPreviewForElement(item, el) {
+    const rect = el?.getBoundingClientRect?.();
+    if (!rect) return;
+    showPreview(item, rect.left, rect.top + rect.height / 2);
+  }
+
   function hidePreview(delay = 0) {
     setTimeout(() => { if (!state.drag) state.preview?.classList.remove('is-visible'); }, delay);
   }
@@ -311,8 +348,8 @@
     setTimeout(updateActive, 180);
   }
 
-  function updateActive() {
-    if (!state.visible.length || !state.thumb) return;
+  function currentVisibleIndex() {
+    if (!state.visible.length) return 0;
     const y = window.innerHeight * 0.28;
     let previousVisibleIndex = -1;
     let nearestVisibleIndex = 0;
@@ -329,10 +366,24 @@
       if (r.top <= y) previousVisibleIndex = i;
     });
 
-    const vi = previousVisibleIndex >= 0 ? previousVisibleIndex : nearestVisibleIndex;
+    return previousVisibleIndex >= 0 ? previousVisibleIndex : nearestVisibleIndex;
+  }
+
+  function jumpToVisibleIndex(index, behavior = 'smooth') {
+    if (!state.visible.length) return;
+    const target = state.visible[clamp(index, 0, state.visible.length - 1)];
+    if (target) scrollTo(target, behavior);
+  }
+
+  function updateActive() {
+    if (!state.visible.length || !state.thumb) return;
+    const vi = currentVisibleIndex();
     const active = state.visible[vi];
     const pct = itemPosition(active, vi, state.visible.length);
     state.thumb.style.top = `${pct}%`;
+    state.track?.setAttribute('aria-valuemax', String(Math.max(1, state.visible.length)));
+    state.track?.setAttribute('aria-valuenow', String(Math.max(1, vi + 1)));
+    state.track?.setAttribute('aria-valuetext', `${roleName(active?.role)} ${vi + 1}/${state.visible.length}`);
     state.dots?.querySelectorAll('.cn-dot').forEach((dot) => {
       dot.classList.toggle('is-active', Number(dot.dataset.globalIndex) === active?.index);
     });
@@ -501,8 +552,6 @@
     const last = state.messages[state.messages.length - 1];
     requestAnimationFrame(() => {
       last?.root?.scrollIntoView({ block: 'end', behavior: 'auto' });
-      const scroller = document.scrollingElement || document.documentElement;
-      scroller.scrollTop = scroller.scrollHeight;
       setTimeout(updateActive, 80);
     });
   }
@@ -588,12 +637,15 @@
   }
 
   document.addEventListener('keydown', (e) => {
-    if (!e.altKey) return;
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented || isEditableTarget(e.target)) return;
     const key = e.key.toLowerCase();
+    if (!['j', 'c', 'n', 'p'].includes(key)) return;
+    e.preventDefault();
+    e.stopPropagation();
     if (key === 'j') saveSettings({ enabled: !state.settings.enabled });
     if (key === 'c') saveSettings({ aiCollapseEnabled: !state.settings.aiCollapseEnabled, aiFoldEnabled: !state.settings.aiCollapseEnabled });
-    if (key === 'n') scrollTo(state.visible[Math.min(state.visible.length - 1, Math.max(0, state.visible.findIndex(m => m.root.getBoundingClientRect().top > 10)))]);
-    if (key === 'p') scrollTo(state.visible[Math.max(0, Math.max(0, state.visible.findIndex(m => m.root.getBoundingClientRect().top > 10)) - 1)]);
+    if (key === 'n') jumpToVisibleIndex(currentVisibleIndex() + 1);
+    if (key === 'p') jumpToVisibleIndex(currentVisibleIndex() - 1);
   });
 
   function init() {
