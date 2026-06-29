@@ -1,6 +1,6 @@
 const DEFAULTS = {
   enabled: true,
-  hideOfficialNav: true,
+  hideOfficialNav: false,
   officialNavSelector: 'div.fixed.top-1\\/2.z-20.-translate-y-1\\/2.inset-e-4',
   navOffset: 64,
   aiCollapseEnabled: true,
@@ -18,7 +18,9 @@ const controls = {
   aiCollapseEnabled: document.querySelector('#aiCollapseEnabled'),
   side: document.querySelector('#side'),
   navOffset: document.querySelector('#navOffset'),
+  navOffsetRange: document.querySelector('#navOffsetRange'),
   collapseHeight: document.querySelector('#collapseHeight'),
+  collapseHeightRange: document.querySelector('#collapseHeightRange'),
   autoScrollToBottom: document.querySelector('#autoScrollToBottom'),
   performanceMode: document.querySelector('#performanceMode')
 };
@@ -49,7 +51,9 @@ function load() {
     controls.aiCollapseEnabled.checked = aiCollapse;
     controls.side.value = items.side || 'right';
     controls.navOffset.value = Number(items.navOffset || 64);
+    controls.navOffsetRange.value = Number(items.navOffset || 64);
     controls.collapseHeight.value = Number(items.collapseHeight || 360);
+    controls.collapseHeightRange.value = Number(items.collapseHeight || 360);
     controls.autoScrollToBottom.checked = items.autoScrollToBottom !== false;
     controls.performanceMode.checked = items.performanceMode !== false;
     renderSummary(items, aiCollapse);
@@ -88,16 +92,30 @@ controls.aiCollapseEnabled.addEventListener('change', () => save('aiCollapseEnab
 controls.side.addEventListener('change', () => save('side', controls.side.value));
 controls.performanceMode.addEventListener('change', () => save('performanceMode', controls.performanceMode.checked));
 controls.autoScrollToBottom.addEventListener('change', () => save('autoScrollToBottom', controls.autoScrollToBottom.checked));
-controls.navOffset.addEventListener('change', () => {
-  const value = Math.max(6, Math.min(140, Number(controls.navOffset.value || 64)));
-  controls.navOffset.value = value;
-  save('navOffset', value);
+
+function clampNumber(value, min, max, fallback) {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return fallback;
+  return Math.max(min, Math.min(max, next));
+}
+
+function saveNumberControl(key, value, min, max, fallback) {
+  const next = clampNumber(value, min, max, fallback);
+  controls[key].value = next;
+  controls[`${key}Range`].value = next;
+  save(key, next);
+}
+
+controls.navOffset.addEventListener('change', () => saveNumberControl('navOffset', controls.navOffset.value, 6, 140, 64));
+controls.navOffsetRange.addEventListener('input', () => {
+  controls.navOffset.value = clampNumber(controls.navOffsetRange.value, 6, 140, 64);
 });
-controls.collapseHeight.addEventListener('change', () => {
-  const value = Math.max(260, Math.min(900, Number(controls.collapseHeight.value || 360)));
-  controls.collapseHeight.value = value;
-  save('collapseHeight', value);
+controls.navOffsetRange.addEventListener('change', () => saveNumberControl('navOffset', controls.navOffsetRange.value, 6, 140, 64));
+controls.collapseHeight.addEventListener('change', () => saveNumberControl('collapseHeight', controls.collapseHeight.value, 260, 900, 360));
+controls.collapseHeightRange.addEventListener('input', () => {
+  controls.collapseHeight.value = clampNumber(controls.collapseHeightRange.value, 260, 900, 360);
 });
+controls.collapseHeightRange.addEventListener('change', () => saveNumberControl('collapseHeight', controls.collapseHeightRange.value, 260, 900, 360));
 
 document.querySelectorAll('[data-tip]').forEach((row) => {
   row.addEventListener('mouseenter', () => {
