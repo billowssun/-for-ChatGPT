@@ -7,6 +7,9 @@
   <style>
     :root{color-scheme:light dark;--a:#10a37f;--b:#3b82f6;--panel:color-mix(in srgb,CanvasText 4%,Canvas);--panel2:color-mix(in srgb,CanvasText 7%,Canvas);--line:color-mix(in srgb,CanvasText 12%,transparent);--muted:color-mix(in srgb,CanvasText 58%,transparent);--soft:color-mix(in srgb,CanvasText 7%,transparent);--ok:color-mix(in srgb,var(--a) 14%,transparent)}*{box-sizing:border-box}body{width:346px;margin:0;padding:14px;background:Canvas;color:CanvasText;font:13px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}.hero{display:grid;grid-template-columns:42px 1fr;gap:11px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--a) 10%,transparent),color-mix(in srgb,var(--b) 7%,transparent)),var(--panel);box-shadow:0 10px 28px rgba(0,0,0,.08)}.mark{width:42px;height:42px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,var(--a),var(--b));color:#fff;font-weight:900}.title{min-width:0}h1{margin:0;font-size:16px;letter-spacing:0}.sub{margin:3px 0 0;color:var(--muted);font-size:12px}.summary{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.pill{min-height:24px;padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,CanvasText 4%,transparent);color:var(--muted);font-size:11px;font-weight:760}.pill.is-on{border-color:color-mix(in srgb,var(--a) 32%,var(--line));background:var(--ok);color:color-mix(in srgb,var(--a) 78%,CanvasText)}.section{margin-top:12px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.section-title{display:flex;align-items:center;justify-content:space-between;padding:0 4px 6px;color:var(--muted);font-size:11px;font-weight:820}.section-title span:last-child{font-weight:700}.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:42px;padding:8px;border-radius:8px}.row:hover{background:color-mix(in srgb,CanvasText 5%,transparent)}.label{display:grid;gap:2px;min-width:0}label{font-weight:740}.mini{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}input[type="checkbox"]{width:19px;height:19px;accent-color:var(--a);cursor:pointer}select,input[type="number"]{width:126px;background:var(--panel2);color:CanvasText;border:1px solid color-mix(in srgb,CanvasText 14%,transparent);border-radius:9px;padding:7px 9px;outline:none}input[type="number"]{text-align:right}.tip{min-height:38px;margin-top:10px;padding:10px 11px;border:1px solid color-mix(in srgb,var(--a) 18%,transparent);border-radius:10px;background:color-mix(in srgb,var(--a) 7%,transparent);color:color-mix(in srgb,CanvasText 78%,transparent);font-size:12px}.actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}button{height:36px;border:1px solid var(--line);border-radius:9px;background:var(--soft);color:CanvasText;cursor:pointer;font-weight:760}button:hover{border-color:color-mix(in srgb,var(--a) 42%,var(--line));background:color-mix(in srgb,var(--a) 9%,transparent)}.status{min-height:16px;margin-top:8px;color:var(--muted);font-size:11px;text-align:center}
   </style>
+  <style>
+    .number-control{width:136px;display:grid;gap:5px}.number-control input[type="range"]{width:136px;accent-color:var(--a)}.number-field{display:flex;align-items:center;justify-content:flex-end;gap:5px}.number-field input[type="number"]{width:88px}.unit{min-width:20px;color:var(--muted);font-size:11px;font-weight:780}
+  </style>
 </head>
 <body>
   <header class="hero">
@@ -47,7 +50,10 @@
     </div>
     <div class="row" data-tip="调节导航条到屏幕边缘的距离，方便避开其他悬浮控件。">
       <div class="label"><label for="navOffset">侧边距离</label><span class="mini">避开悬浮控件</span></div>
-      <input id="navOffset" type="number" min="6" max="140" step="4" />
+      <div class="number-control">
+        <input id="navOffsetRange" type="range" min="6" max="140" step="4" aria-label="侧边距离滑块" />
+        <div class="number-field"><input id="navOffset" type="number" min="6" max="140" step="4" /><span class="unit">px</span></div>
+      </div>
     </div>
     <div class="row" data-tip="隐藏 ChatGPT 自带的侧边导航，避免和 ThreadPilot 导航条重叠。">
       <div class="label"><label for="hideOfficialNav">隐藏原生导航</label><span class="mini">减少界面重叠</span></div>
@@ -63,7 +69,10 @@
     </div>
     <div class="row" data-tip="设置 AI 回复折叠后保留的可见高度。">
       <div class="label"><label for="collapseHeight">保留高度</label><span class="mini">折叠后显示多少开头</span></div>
-      <input id="collapseHeight" type="number" min="260" max="900" step="20" />
+      <div class="number-control">
+        <input id="collapseHeightRange" type="range" min="260" max="900" step="20" aria-label="保留高度滑块" />
+        <div class="number-field"><input id="collapseHeight" type="number" min="260" max="900" step="20" /><span class="unit">px</span></div>
+      </div>
     </div>
   </section>
 
