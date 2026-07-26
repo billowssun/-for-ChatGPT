@@ -34,6 +34,7 @@ No account, analytics, ads, or conversation upload.
 
 The popup contains only:
 
+- Current-page connection status and a reconnect action
 - Conversation timeline on/off
 - Automatic long-reply folding on/off
 - Compact, balanced, or relaxed folding threshold
@@ -50,7 +51,7 @@ The popup contains only:
 - Website: https://billowssun.github.io/threadpilot-for-chatgpt/
 - Releases: https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest
 
-After installation, open or refresh https://chatgpt.com/.
+After installation or an extension update, open or refresh https://chatgpt.com/. If the page is not connected, open the extension popup and choose **Reconnect**.
 
 ## Privacy
 
@@ -94,6 +95,7 @@ ThreadPilot 是一个专门改善 ChatGPT 长对话阅读体验的浏览器扩�
 
 弹窗只保留：
 
+- 当前页面连接状态和重新连接入口
 - 对话时间线开关
 - 自动折叠长回答开关
 - 紧凑、平衡、宽松三档折叠强度
@@ -110,7 +112,7 @@ ThreadPilot 是一个专门改善 ChatGPT 长对话阅读体验的浏览器扩�
 - 官网：https://billowssun.github.io/threadpilot-for-chatgpt/
 - 最新版本：https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest
 
-安装后打开或刷新 https://chatgpt.com/。
+安装或更新扩展后，打开或刷新 https://chatgpt.com/。如果页面未连接，可在扩展弹窗中点击“重新连接”。
 
 ## 隐私
 

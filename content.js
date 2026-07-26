@@ -1,6 +1,20 @@
 (() => {
   'use strict';
 
+  const VERSION = '3.0.1';
+  const RUNTIME_KEY = '__THREADPILOT_RUNTIME__';
+  const existingRuntime = globalThis[RUNTIME_KEY];
+  if (existingRuntime?.version === VERSION) {
+    existingRuntime.refresh?.('reinjected');
+    return;
+  }
+
+  const runtimeBridge = {
+    version: VERSION,
+    refresh: () => {}
+  };
+  globalThis[RUNTIME_KEY] = runtimeBridge;
+
   const ROOT_ID = 'threadpilot';
   const FOLD_ACTIONS_ID = 'threadpilot-fold-actions';
   const CONTROL_ATTR = 'data-threadpilot-control';
@@ -18,6 +32,13 @@
     '[data-message-author-role]',
     '[data-testid^="conversation-turn-"] [data-message-author-role]'
   ];
+  const MESSAGE_ROLE_SELECTOR = '[data-message-author-role="user"], [data-message-author-role="assistant"]';
+  const TURN_SELECTOR = '[data-testid^="conversation-turn-"]';
+  const STOP_SELECTOR = [
+    'button[data-testid="stop-button"]',
+    'button[aria-label*="Stop generating"]',
+    'button[aria-label*="停止生成"]'
+  ].join(',');
   const CONTENT_SELECTORS = [
     '.markdown',
     '[data-message-id] .markdown',
@@ -40,7 +61,9 @@
     autoEvaluated: new Set(),
     activeIndex: -1,
     routeKey: '',
+    turnSignature: '',
     rebuildTimer: 0,
+    streamTimer: 0,
     scrollFrame: 0,
     geometryFrame: 0,
     highlightTimer: 0,
@@ -54,7 +77,15 @@
     scrollContainer: null,
     turnRatios: [],
     navigationLockIndex: -1,
-    navigationLockUntil: 0
+    navigationLockUntil: 0,
+    messageCache: new Map(),
+    metrics: {
+      observerBatches: 0,
+      structuralRefreshes: 0,
+      streamRefreshes: 0,
+      ignoredMutations: 0,
+      lastRefreshMs: 0
+    }
   };
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -169,7 +200,12 @@
   }
 
   function readSettings() {
-    chrome.storage.sync.get(null, (items) => {
+    const storage = globalThis.chrome?.storage?.sync;
+    if (!storage) {
+      rebuild('storage-unavailable', true);
+      return;
+    }
+    storage.get(null, (items) => {
       state.settings = {
         timelineEnabled: typeof items.timelineEnabled === 'boolean'
           ? items.timelineEnabled
@@ -179,13 +215,13 @@
           : items.aiCollapseEnabled !== false,
         foldPreset: FOLD_PRESETS[items.foldPreset] ? items.foldPreset : DEFAULTS.foldPreset
       };
-      rebuild();
+      rebuild('settings-loaded', true);
     });
   }
 
   function saveSettings(patch) {
     state.settings = { ...state.settings, ...patch };
-    chrome.storage.sync.set(patch);
+    globalThis.chrome?.storage?.sync?.set(patch);
     applySettings();
   }
 
@@ -224,7 +260,7 @@
     return value.length > limit ? `${value.slice(0, limit)}…` : value;
   }
 
-  function stableMessageKey(roleNode, root, role, index, text) {
+  function stableMessageKey(roleNode, root, role, index) {
     const messageId = root.getAttribute?.('data-message-id')
       || roleNode.getAttribute?.('data-message-id')
       || root.querySelector?.('[data-message-id]')?.getAttribute('data-message-id');
@@ -233,10 +269,10 @@
     const testId = root.getAttribute?.('data-testid');
     if (testId) return `${testId}:${role}`;
 
-    return `${currentConversationKey()}:${role}:${index}:${hash(text.slice(0, 320))}`;
+    return `${currentConversationKey()}:${role}:${index}`;
   }
 
-  function collectMessages() {
+  function collectMessages({ refreshKeys = null, refreshAll = false } = {}) {
     const main = document.querySelector('main') || document.body;
     const seen = new Set();
     const roleNodes = [];
@@ -260,15 +296,23 @@
       const role = roleNode.getAttribute('data-message-author-role');
       const root = messageRoot(roleNode);
       const content = contentNode(roleNode, root);
-      const text = readableText(content);
-      return {
+      const key = stableMessageKey(roleNode, root, role, index);
+      const cached = state.messageCache.get(key);
+      const shouldRefresh = refreshAll
+        || refreshKeys?.has(key)
+        || !cached
+        || cached.root !== root
+        || cached.content !== content;
+      const message = {
         role,
         root,
         roleNode,
         content,
-        text,
-        key: stableMessageKey(roleNode, root, role, index, text)
+        text: shouldRefresh ? readableText(content) : cached.text,
+        key
       };
+      state.messageCache.set(key, message);
+      return message;
     }).filter((message) => (
       (message.role === 'user' || message.role === 'assistant')
       && message.root?.isConnected
@@ -276,8 +320,8 @@
     ));
   }
 
-  function collectTurns() {
-    const messages = collectMessages();
+  function collectTurns(options) {
+    const messages = collectMessages(options);
     const turns = [];
 
     for (const message of messages) {
@@ -298,6 +342,20 @@
         current.assistant = message;
         current.answerPreview = message.text;
         current.answerLength = message.text.length;
+      } else {
+        turns.push({
+          id: `turn-orphan-${message.key}`,
+          user: {
+            ...message,
+            role: 'synthetic',
+            text: '较早的对话'
+          },
+          assistant: message,
+          promptPreview: '较早的回答',
+          answerPreview: message.text,
+          answerLength: message.text.length,
+          syntheticPrompt: true
+        });
       }
     }
 
@@ -315,12 +373,9 @@
     );
     if (rootStreaming) return true;
 
-    const globalStopControl = document.querySelector([
-      'button[data-testid="stop-button"]',
-      'button[aria-label*="Stop generating"]',
-      'button[aria-label*="停止生成"]'
-    ].join(','));
-    return Boolean(globalStopControl && state.turns.at(-1)?.id === turn.id);
+    if (state.turns.at(-1)?.id !== turn.id) return false;
+    const globalStopControl = document.querySelector(STOP_SELECTOR);
+    return Boolean(globalStopControl);
   }
 
   function preset() {
@@ -394,6 +449,16 @@
   function applyFold(turn) {
     const assistant = turn.assistant;
     if (!assistant?.content) return;
+
+    if (isStreaming(turn)) {
+      assistant.root.classList.add('tp-assistant-turn');
+      assistant.content.classList.remove('tp-answer-collapsed');
+      const existingControl = assistant.root.querySelector?.(
+        `:scope [${CONTROL_ATTR}="fold"][data-turn-id="${CSS.escape(turn.id)}"]`
+      );
+      existingControl?.remove();
+      return;
+    }
 
     const contentId = ensureAnswerId(turn);
     const control = foldControl(turn);
@@ -491,6 +556,7 @@
 
     const root = document.createElement('aside');
     root.id = ROOT_ID;
+    root.dataset.version = VERSION;
     root.setAttribute('aria-label', '对话时间线');
     root.innerHTML = `
       <div class="tp-rail-head">
@@ -544,6 +610,7 @@
 
     const foldRoot = document.createElement('div');
     foldRoot.id = FOLD_ACTIONS_ID;
+    foldRoot.dataset.version = VERSION;
     foldRoot.setAttribute('aria-label', '批量折叠控制');
     foldRoot.innerHTML = `
       <button class="tp-fold-all-toggle" type="button" data-action="toggle-all-folds">
@@ -693,6 +760,39 @@
       ? `${Math.max(0, state.activeIndex) + 1} / ${state.turns.length}`
       : '0 / 0';
     renderFoldAllToggle();
+    updateDiagnostics();
+  }
+
+  function healthSnapshot() {
+    const completedAnswers = state.turns.filter((turn) => turn.assistant && !isStreaming(turn));
+    return {
+      type: 'threadpilot:health',
+      connected: true,
+      version: VERSION,
+      conversation: currentConversationKey(),
+      turns: state.turns.length,
+      completedAnswers: completedAnswers.length,
+      collapsedAnswers: completedAnswers.filter((turn) => answerState(turn) === 'collapsed').length,
+      timelineEnabled: state.settings.timelineEnabled,
+      autoCollapse: state.settings.autoCollapse,
+      metrics: { ...state.metrics }
+    };
+  }
+
+  function updateDiagnostics() {
+    if (!state.root?.isConnected) return;
+    const health = healthSnapshot();
+    state.root.dataset.version = VERSION;
+    state.root.dataset.turns = String(health.turns);
+    state.root.dataset.collapsed = String(health.collapsedAnswers);
+    state.root.dataset.refreshMs = String(Math.round(state.metrics.lastRefreshMs * 10) / 10);
+    state.root.dataset.observerBatches = String(state.metrics.observerBatches);
+    state.root.dataset.structuralRefreshes = String(state.metrics.structuralRefreshes);
+    state.root.dataset.streamRefreshes = String(state.metrics.streamRefreshes);
+    state.root.dataset.ignoredMutations = String(state.metrics.ignoredMutations);
+    if (state.foldRoot?.isConnected) {
+      state.foldRoot.dataset.version = VERSION;
+    }
   }
 
   function renderFoldAllToggle() {
@@ -871,6 +971,8 @@
     state.routeKey = route;
     state.manualFold.clear();
     state.autoEvaluated.clear();
+    state.messageCache.clear();
+    state.turnSignature = '';
     state.activeIndex = -1;
     state.turnRatios = [];
     state.navigationLockIndex = -1;
@@ -878,39 +980,157 @@
     return true;
   }
 
-  function rebuild() {
-    routeChanged();
-    state.turns = collectTurns();
-    applyAllFolds();
-    renderTimeline();
+  function turnSignature(turns) {
+    return turns.map((turn) => `${turn.id}:${turn.assistant?.key || ''}`).join('|');
   }
 
-  function scheduleRebuild(delay = 120) {
-    clearTimeout(state.rebuildTimer);
-    state.rebuildTimer = window.setTimeout(rebuild, delay);
+  function rebuild(reason = 'structural', refreshAll = false) {
+    const startedAt = performance.now();
+    const changedRoute = routeChanged();
+    const previousTurns = state.turns;
+    const nextTurns = collectTurns({ refreshAll: refreshAll || changedRoute });
+    const nextSignature = turnSignature(nextTurns);
+    const rootsChanged = nextTurns.length !== previousTurns.length
+      || nextTurns.some((turn, index) => (
+        turn.user?.root !== previousTurns[index]?.user?.root
+        || turn.assistant?.root !== previousTurns[index]?.assistant?.root
+      ));
+    const structureChanged = nextSignature !== state.turnSignature || rootsChanged;
+    state.turns = nextTurns;
+    state.turnSignature = nextSignature;
+    applyAllFolds();
+    if (structureChanged || !state.track?.isConnected) {
+      renderTimeline();
+    } else {
+      renderTimelineState();
+      scheduleTimelineGeometry();
+    }
+    state.metrics.structuralRefreshes += 1;
+    state.metrics.lastRefreshMs = performance.now() - startedAt;
+    updateDiagnostics();
+    runtimeBridge.lastReason = reason;
+  }
+
+  function scheduleRebuild(delay = 80, reason = 'mutation') {
+    if (state.rebuildTimer) return;
+    state.rebuildTimer = window.setTimeout(() => {
+      state.rebuildTimer = 0;
+      rebuild(reason);
+    }, delay);
+  }
+
+  function scheduleStreamingRefresh(delay = 420) {
+    if (state.streamTimer) return;
+    state.streamTimer = window.setTimeout(() => {
+      state.streamTimer = 0;
+      refreshStreamingTurn();
+    }, delay);
+  }
+
+  function refreshStreamingTurn() {
+    const startedAt = performance.now();
+    const main = document.querySelector('main') || document.body;
+    const assistantNodes = queryAll(main, '[data-message-author-role="assistant"]');
+    const roleNode = assistantNodes.at(-1);
+    if (!roleNode) {
+      scheduleRebuild(0, 'stream-without-assistant');
+      return;
+    }
+
+    const root = messageRoot(roleNode);
+    const content = contentNode(roleNode, root);
+    const key = stableMessageKey(roleNode, root, 'assistant', assistantNodes.length - 1);
+    const message = {
+      role: 'assistant',
+      root,
+      roleNode,
+      content,
+      text: readableText(content),
+      key
+    };
+    state.messageCache.set(key, message);
+
+    const turn = state.turns.find((item) => item.assistant?.key === key);
+    if (!turn) {
+      scheduleRebuild(0, 'new-streaming-turn');
+      return;
+    }
+
+    turn.assistant = message;
+    turn.answerPreview = message.text;
+    turn.answerLength = message.text.length;
+    applyFold(turn);
+    renderTimelineState();
+    scheduleTimelineGeometry();
+    state.metrics.streamRefreshes += 1;
+    state.metrics.lastRefreshMs = performance.now() - startedAt;
+    updateDiagnostics();
+  }
+
+  function elementFromMutationNode(node) {
+    if (node instanceof Element) return node;
+    return node?.parentElement || null;
+  }
+
+  function matchesOrContains(element, selector) {
+    return Boolean(
+      element
+      && (element.matches?.(selector) || element.querySelector?.(selector))
+    );
+  }
+
+  function mutationTouchesStructure(mutation) {
+    if (isThreadPilotNode(elementFromMutationNode(mutation.target))) return false;
+    return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => {
+      const element = elementFromMutationNode(node);
+      if (!element || isThreadPilotNode(element)) return false;
+      return matchesOrContains(element, MESSAGE_ROLE_SELECTOR)
+        || matchesOrContains(element, TURN_SELECTOR);
+    });
+  }
+
+  function mutationTouchesStreaming(mutation) {
+    const target = elementFromMutationNode(mutation.target);
+    if (!target || isThreadPilotNode(target)) return false;
+    if (closest(target, '[data-message-author-role="assistant"]')) return true;
+    return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => {
+      const element = elementFromMutationNode(node);
+      return matchesOrContains(element, STOP_SELECTOR);
+    });
   }
 
   function observe() {
     state.observer?.disconnect();
     state.observer = new MutationObserver((mutations) => {
-      const relevant = mutations.some((mutation) => {
-        if (isThreadPilotNode(mutation.target)) return false;
-        return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => (
-          !(node instanceof Element) || !isThreadPilotNode(node)
-        ));
-      });
-      if (relevant) scheduleRebuild();
+      state.metrics.observerBatches += 1;
+      if (currentConversationKey() !== state.routeKey) {
+        scheduleRebuild(40, 'route-change');
+        return;
+      }
+      if (mutations.some(mutationTouchesStructure)) {
+        scheduleRebuild(60, 'message-structure');
+        return;
+      }
+      if (mutations.some(mutationTouchesStreaming)) {
+        scheduleStreamingRefresh();
+        return;
+      }
+      state.metrics.ignoredMutations += mutations.length;
     });
-    state.observer.observe(document.body, { childList: true, subtree: true });
+    state.observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
 
     window.addEventListener('scroll', scheduleActiveUpdate, { capture: true, passive: true });
     window.addEventListener('resize', () => {
       scheduleTimelineGeometry();
       scheduleActiveUpdate();
     }, { passive: true });
-    window.addEventListener('popstate', () => scheduleRebuild(60));
+    window.addEventListener('popstate', () => scheduleRebuild(40, 'popstate'));
 
-    chrome.storage.onChanged.addListener((changes, area) => {
+    globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => {
       if (area !== 'sync') return;
       const patch = {};
       if (changes.timelineEnabled) patch.timelineEnabled = Boolean(changes.timelineEnabled.newValue);
@@ -950,11 +1170,51 @@
     }
   });
 
+  function cleanupStaleDom() {
+    queryAll(document, `#${ROOT_ID}, #${FOLD_ACTIONS_ID}`).forEach((node) => node.remove());
+    queryAll(document, `[${CONTROL_ATTR}]`).forEach((node) => node.remove());
+    queryAll(document, '.tp-answer-collapsed').forEach((node) => {
+      node.classList.remove('tp-answer-collapsed');
+      node.style.removeProperty('--tp-fold-height');
+    });
+    queryAll(document, '.tp-assistant-turn').forEach((node) => {
+      node.classList.remove('tp-assistant-turn');
+    });
+  }
+
+  function registerRuntimeMessaging() {
+    globalThis.chrome?.runtime?.onMessage?.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'threadpilot:ping') {
+        sendResponse(healthSnapshot());
+        return false;
+      }
+      if (message?.type === 'threadpilot:refresh') {
+        scheduleRebuild(0, 'popup-refresh');
+        sendResponse(healthSnapshot());
+        return false;
+      }
+      return false;
+    });
+  }
+
   function init() {
-    state.routeKey = currentConversationKey();
-    createRoot();
-    observe();
-    readSettings();
+    try {
+      cleanupStaleDom();
+      state.routeKey = currentConversationKey();
+      createRoot();
+      observe();
+      registerRuntimeMessaging();
+      runtimeBridge.refresh = (reason = 'runtime-refresh') => {
+        scheduleRebuild(0, reason);
+      };
+      runtimeBridge.health = healthSnapshot;
+      runtimeBridge.ready = true;
+      readSettings();
+    } catch (error) {
+      runtimeBridge.ready = false;
+      runtimeBridge.error = String(error?.message || error);
+      console.error('[ThreadPilot] initialization failed', error);
+    }
   }
 
   if (document.readyState === 'loading') {

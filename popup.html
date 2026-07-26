@@ -16,6 +16,15 @@
   </header>
 
   <main>
+    <section class="connection-card" id="connectionCard" data-state="checking" aria-live="polite">
+      <span class="connection-dot" aria-hidden="true"></span>
+      <span class="connection-copy">
+        <strong id="connectionTitle">正在检查页面</strong>
+        <small id="connectionDetail">确认 ThreadPilot 是否已连接</small>
+      </span>
+      <button id="reconnectPage" type="button" hidden>重新连接</button>
+    </section>
+
     <section class="primary-settings" aria-label="核心功能">
       <label class="setting-row" for="timelineEnabled">
         <span class="setting-copy">

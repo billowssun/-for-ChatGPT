@@ -54,7 +54,8 @@
       overscroll-behavior: contain;
     }
 
-    article {
+    article,
+    section[data-testid^="conversation-turn-"] {
       padding: 24px 0;
       border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     }
@@ -96,7 +97,8 @@
       background: rgba(33, 33, 33, 0.95);
     }
 
-    html.dark article {
+    html.dark article,
+    html.dark section[data-testid^="conversation-turn-"] {
       border-color: rgba(255, 255, 255, 0.12);
     }
 
@@ -214,7 +216,14 @@
         foldPreset: 'compact'
       };
       const listeners = [];
+      const messageListeners = [];
       window.chrome = {
+        runtime: {
+          getURL(path) { return `../${path}`; },
+          onMessage: {
+            addListener(listener) { messageListeners.push(listener); }
+          }
+        },
         storage: {
           sync: {
             get(_keys, callback) { callback({ ...store }); },
@@ -250,6 +259,64 @@
         shell.className = 'scroll-shell';
         main.before(shell);
         shell.append(main);
+      }
+
+      if (new URLSearchParams(location.search).get('live') === '1') {
+        main.querySelectorAll('article').forEach((article) => {
+          const section = document.createElement('section');
+          [...article.attributes].forEach((attribute) => {
+            section.setAttribute(attribute.name, attribute.value);
+          });
+          section.innerHTML = article.innerHTML;
+          article.replaceWith(section);
+        });
+      }
+
+      if (new URLSearchParams(location.search).get('orphan') === '1') {
+        main.querySelector('[data-message-author-role="user"]')
+          ?.closest('[data-testid^="conversation-turn-"]')
+          ?.remove();
+      }
+
+      window.__fixture = {
+        ping() {
+          let response;
+          messageListeners.forEach((listener) => {
+            listener({ type: 'threadpilot:ping' }, {}, (value) => {
+              response = value;
+            });
+          });
+          return response;
+        },
+        burst(count = 500) {
+          const role = main.querySelector('[data-message-author-role="assistant"]');
+          const markdown = role?.querySelector('.markdown');
+          if (!role || !markdown) return 0;
+          role.setAttribute('data-is-streaming', 'true');
+          for (let index = 0; index < count; index += 1) {
+            let token = markdown.querySelector('[data-fixture-token]');
+            if (!token) {
+              token = document.createElement('span');
+              token.dataset.fixtureToken = '';
+              markdown.append(token);
+            }
+            token.textContent = ` ${index}`;
+          }
+          return count;
+        },
+        stop() {
+          const role = main.querySelector('[data-message-author-role="assistant"]');
+          role?.removeAttribute('data-is-streaming');
+          role?.querySelector('.markdown')?.append(document.createTextNode(' done'));
+        }
+      };
+
+      const burstCount = Number(new URLSearchParams(location.search).get('burst') || 0);
+      if (burstCount > 0) {
+        window.setTimeout(() => {
+          window.__fixture.burst(burstCount);
+          window.setTimeout(() => window.__fixture.stop(), 700);
+        }, 80);
       }
     })();
   </script>

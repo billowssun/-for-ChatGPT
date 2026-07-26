@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "ThreadPilot for ChatGPT",
   "short_name": "ThreadPilot",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Fold long ChatGPT replies and navigate every turn with a focused conversation timeline.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "activeTab"],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
