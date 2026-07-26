@@ -78,8 +78,8 @@ jobs:
           cp styles.css "$DIST/"
           cp popup.html "$DIST/"
           cp popup.js "$DIST/"
+          cp popup.css "$DIST/"
           cp about.html "$DIST/"
-          cp about.js "$DIST/"
 
           if [ -d icons ]; then cp -R icons "$DIST/icons"; fi
 

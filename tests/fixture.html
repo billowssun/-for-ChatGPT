@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ThreadPilot 长对话测试</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    :root {
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: #fff;
+      color: #202020;
+      font: 15px/1.7 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    header {
+      position: sticky;
+      z-index: 4;
+      top: 0;
+      height: 64px;
+      padding: 0 34px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+    }
+
+    header strong {
+      font-size: 18px;
+    }
+
+    main {
+      width: min(820px, calc(100vw - 150px));
+      margin: 0 auto;
+      padding: 34px 0 180px;
+    }
+
+    .scroll-shell {
+      height: calc(100vh - 64px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    article {
+      padding: 24px 0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    [data-message-author-role="user"] {
+      font-weight: 650;
+    }
+
+    [data-message-author-role="assistant"] {
+      color: #303030;
+    }
+
+    .markdown p {
+      margin: 0 0 13px;
+    }
+
+    .composer {
+      position: fixed;
+      z-index: 3;
+      right: 50%;
+      bottom: 18px;
+      width: min(820px, calc(100vw - 150px));
+      min-height: 72px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+      transform: translateX(50%);
+    }
+
+    html.dark body {
+      background: #212121;
+      color: #ececec;
+    }
+
+    html.dark header,
+    html.dark .composer {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: rgba(33, 33, 33, 0.95);
+    }
+
+    html.dark article {
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html.dark [data-message-author-role="assistant"] {
+      color: #dedede;
+    }
+
+    @media (max-width: 700px) {
+      main,
+      .composer {
+        width: calc(100vw - 66px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header><strong>ChatGPT</strong></header>
+  <main>
+    <article data-testid="conversation-turn-1">
+      <div data-message-author-role="user" data-message-id="user-1">
+        帮我制定一个 7 天的健康饮食计划，目标是减脂，每天三餐。
+      </div>
+    </article>
+    <article data-testid="conversation-turn-2">
+      <div data-message-author-role="assistant" data-message-id="assistant-1">
+        <div class="markdown">
+          <p>好的。先确定三个原则：高蛋白、稳定热量缺口、优先选择低加工食物。</p>
+          <p>第 1 天早餐可以选择燕麦、无糖酸奶与蓝莓；午餐选择鸡胸肉糙米饭；晚餐选择清蒸鱼与蔬菜。</p>
+          <p>第 2 天早餐可以选择全麦面包与鸡蛋；午餐选择牛肉沙拉；晚餐选择豆腐菌菇汤。</p>
+          <p>第 3 天早餐可以选择香蕉奶昔；午餐选择三文鱼饭；晚餐选择虾仁炒蔬菜。</p>
+          <p>第 4 天早餐可以选择低脂奶酪与水果；午餐选择鸡肉卷；晚餐选择番茄牛腩。</p>
+          <p>第 5 天早餐可以选择玉米和鸡蛋；午餐选择金枪鱼意面；晚餐选择冬瓜虾皮汤。</p>
+          <p>第 6 天早餐可以选择无糖豆浆与全麦馒头；午餐选择照烧鸡腿饭；晚餐选择杂粮粥。</p>
+          <p>第 7 天早餐可以选择酸奶坚果杯；午餐选择外食中的清淡套餐；晚餐选择蔬菜豆腐煲。</p>
+          <p>每天保证足量饮水，并按训练量调整主食。计划最重要的是可持续，不需要追求单日绝对精确。</p>
+        </div>
+      </div>
+    </article>
+
+    <article data-testid="conversation-turn-3">
+      <div data-message-author-role="user" data-message-id="user-2">
+        我周末会外出就餐，帮我调整一下周六和周日的饮食建议。
+      </div>
+    </article>
+    <article data-testid="conversation-turn-4">
+      <div data-message-author-role="assistant" data-message-id="assistant-2">
+        <div class="markdown">
+          <p>周六午餐可以正常外食，但先选蛋白质，再选蔬菜，最后决定主食分量。</p>
+          <p>周日晚餐回到清淡组合即可，不需要用极端节食补偿。</p>
+        </div>
+      </div>
+    </article>
+
+    <article data-testid="conversation-turn-5">
+      <div data-message-author-role="user" data-message-id="user-3">
+        能再给我一份适合带饭的版本吗？我上班需要带午餐。
+      </div>
+    </article>
+    <article data-testid="conversation-turn-6">
+      <div data-message-author-role="assistant" data-message-id="assistant-3">
+        <div class="markdown">
+          <p>带饭版本优先考虑保存稳定、复热后口感不差的组合。</p>
+          <p>主菜可以轮换鸡腿肉、牛肉、虾仁与豆腐；蔬菜尽量选择西兰花、胡萝卜、蘑菇和芦笋。</p>
+          <p>主食按一拳大小准备糙米、藜麦或红薯。酱汁分装，吃之前再混合。</p>
+          <p>周日晚可以一次准备两天份，周三再补一次，避免一次做满五天影响口感。</p>
+          <p>便当盒最好选择密封分隔款。热食冷却后再盖盖子，减少水汽。</p>
+          <p>如果午餐后容易困，可以把午餐主食减少四分之一，把这部分放到训练前。</p>
+        </div>
+      </div>
+    </article>
+
+    <article data-testid="conversation-turn-7">
+      <div data-message-author-role="user" data-message-id="user-4">
+        我对鸡蛋过敏，有什么替代方案？
+      </div>
+    </article>
+    <article data-testid="conversation-turn-8">
+      <div data-message-author-role="assistant" data-message-id="assistant-4">
+        <div class="markdown">
+          <p>可以用无糖酸奶、豆腐、鸡胸肉、鱼虾和豆类补充蛋白质。购买加工食品时注意配料表中的蛋制品成分。</p>
+        </div>
+      </div>
+    </article>
+
+    <article data-testid="conversation-turn-9">
+      <div data-message-author-role="user" data-message-id="user-5">
+        最后给我一份采购清单，按食材类别整理。
+      </div>
+    </article>
+    <article data-testid="conversation-turn-10">
+      <div data-message-author-role="assistant" data-message-id="assistant-5">
+        <div class="markdown">
+          <p>蛋白质：鸡胸肉、去皮鸡腿、瘦牛肉、三文鱼、虾仁、北豆腐、无糖酸奶。</p>
+          <p>主食：糙米、燕麦、全麦面包、红薯、玉米、藜麦。</p>
+          <p>蔬菜：西兰花、菠菜、胡萝卜、番茄、蘑菇、芦笋、冬瓜。</p>
+          <p>水果：蓝莓、香蕉、苹果、橙子。</p>
+          <p>调味：低钠酱油、黑胡椒、橄榄油、柠檬、辣椒粉。</p>
+        </div>
+      </div>
+    </article>
+  </main>
+  <div class="composer" aria-label="消息输入框"></div>
+
+  <script>
+    (() => {
+      if (new URLSearchParams(location.search).get('theme') === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+      if (new URLSearchParams(location.search).get('streaming') === '1') {
+        document.querySelector('[data-message-id="assistant-1"]').setAttribute('data-is-streaming', 'true');
+      }
+      const store = {
+        timelineEnabled: true,
+        autoCollapse: true,
+        foldPreset: 'compact'
+      };
+      const listeners = [];
+      window.chrome = {
+        storage: {
+          sync: {
+            get(_keys, callback) { callback({ ...store }); },
+            set(patch, callback) {
+              Object.assign(store, patch);
+              const changes = Object.fromEntries(
+                Object.entries(patch).map(([key, value]) => [key, { newValue: value }])
+              );
+              listeners.forEach((listener) => listener(changes, 'sync'));
+              callback?.();
+            }
+          },
+          onChanged: {
+            addListener(listener) { listeners.push(listener); }
+          }
+        }
+      };
+
+      const requestedTurns = Number(new URLSearchParams(location.search).get('turns') || 5);
+      const main = document.querySelector('main');
+      for (let turn = 6; turn <= requestedTurns; turn += 1) {
+        const user = document.createElement('article');
+        user.dataset.testid = `conversation-turn-${turn * 2 - 1}`;
+        user.innerHTML = `<div data-message-author-role="user" data-message-id="user-${turn}">第 ${turn} 个测试问题：请继续细化这个计划。</div>`;
+        const assistant = document.createElement('article');
+        assistant.dataset.testid = `conversation-turn-${turn * 2}`;
+        assistant.innerHTML = `<div data-message-author-role="assistant" data-message-id="assistant-${turn}"><div class="markdown"><p>这是第 ${turn} 轮回答，用于验证超长时间线的刻度数量、位置映射和当前轮次更新。</p></div></div>`;
+        main.append(user, assistant);
+      }
+
+      if (new URLSearchParams(location.search).get('nested') === '1') {
+        const shell = document.createElement('div');
+        shell.className = 'scroll-shell';
+        main.before(shell);
+        shell.append(main);
+      }
+    })();
+  </script>
+  <script src="../content.js"></script>
+</body>
+</html>

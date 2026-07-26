@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ThreadPilot 时间线前后对照</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #e9eaec;
+      color: #202124;
+      font: 600 14px/1.4 system-ui, sans-serif;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    figure {
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+    figcaption { padding: 10px 12px; }
+    img { width: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <figure>
+      <figcaption>改造前：等距数字圆点，活动线异常</figcaption>
+      <img src="01-before.png" alt="时间线改造前">
+    </figure>
+    <figure>
+      <figcaption>改造后：真实位置刻度，顶部与底部导航</figcaption>
+      <img src="03-after-real-rail.jpg" alt="时间线改造后">
+    </figure>
+  </main>
+</body>
+</html>

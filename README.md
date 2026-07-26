@@ -1,106 +1,117 @@
 # ThreadPilot for ChatGPT
 
-Choose a language:
+ThreadPilot is a focused browser extension for long ChatGPT conversations.
 
-- [English](#english)
-- [中文](#中文)
+It does two things:
 
-<a id="english"></a>
+1. Folds long assistant replies into compact, readable previews.
+2. Turns your prompts into a navigable conversation timeline.
 
-<details open>
-<summary>English</summary>
-
-## Overview
-
-ThreadPilot for ChatGPT is a lightweight browser extension for navigating long ChatGPT conversations. It adds a compact side navigator for your prompts, message previews, and folding controls so long threads stay easier to scan.
+No account, analytics, ads, or conversation upload.
 
 ## Features
 
-- Side navigator for long conversations
-- Hover previews for message nodes
-- Click or drag to jump between messages
-- Navigator focused on your prompts by default
-- Collapse and expand long AI replies
-- Per-message More / Collapse controls
-- Optional hiding for ChatGPT native controls
-- Adjustable side offset
-- Local-only settings
+### Conversation timeline
+
+- One position tick per user prompt
+- Ticks map to the prompts' real positions in the conversation
+- Current turn follows page scrolling
+- Hover preview before jumping
+- Click a tick to place the matching prompt below ChatGPT's fixed header
+- Dedicated jump-to-top and jump-to-bottom controls
+- Dense, non-scrolling rail for very long chats
+
+### Reply folding
+
+- Automatically folds completed long replies
+- Keeps the opening context, character count, and an explicit expand action
+- Per-reply expand and collapse
+- One context-aware bulk fold button, isolated from the timeline hit area
+- Bulk folding preserves the current prompt's viewport position
+- Manual choices survive ChatGPT DOM updates within the current conversation
+
+## Settings
+
+The popup contains only:
+
+- Conversation timeline on/off
+- Automatic long-reply folding on/off
+- Compact, balanced, or relaxed folding threshold
+
+## Shortcuts
+
+- `Alt + J`: show or hide the timeline
+- `Alt + C`: collapse or expand all assistant replies
+- `Alt + N`: jump to the next turn
+- `Alt + P`: jump to the previous turn
 
 ## Install
 
-Get the latest version from:
-
 - Website: https://billowssun.github.io/threadpilot-for-chatgpt/
-- GitHub: https://github.com/billowssun/threadpilot-for-chatgpt
 - Releases: https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest
 
 After installation, open or refresh https://chatgpt.com/.
 
-## Shortcuts
-
-- `Alt + J`: Show / hide navigator
-- `Alt + C`: Fold / unfold long AI replies
-- `Alt + N`: Next message
-- `Alt + P`: Previous message
-
 ## Privacy
 
-ThreadPilot only uses local browser storage for extension preferences. It does not upload conversations, does not use remote analytics, and does not inject ads.
+ThreadPilot stores only feature switches and the folding threshold in browser sync storage. Conversation text stays in the current ChatGPT page and is never uploaded or persisted by the extension.
 
-## Links
+---
 
-- Website: https://billowssun.github.io/threadpilot-for-chatgpt/
-- Feedback: https://github.com/billowssun/threadpilot-for-chatgpt/issues
-- Privacy Policy: https://github.com/billowssun/threadpilot-for-chatgpt/blob/main/PRIVACY_POLICY.md
+# 中文
 
-</details>
+ThreadPilot 是一个专门改善 ChatGPT 长对话阅读体验的浏览器扩展。
 
-<a id="中文"></a>
+它只做两件事：
 
-<details>
-<summary>中文</summary>
+1. 把 AI 长回答折叠成可读的紧凑摘要。
+2. 把你的提问整理成可导航的对话时间线。
 
-## 简介
-
-ThreadPilot for ChatGPT 是一个轻量浏览器扩展，用来改善 ChatGPT 长对话的阅读和定位体验。它会添加聚焦你输入内容的侧边导航、消息预览和折叠控制，让长线程更容易浏览。
+无需账号，不含统计、广告，也不会上传对话。
 
 ## 功能
 
-- 为长对话生成侧边导航
-- 悬停预览消息节点
-- 点击或拖动快速跳转
-- 默认只导航你的输入内容
-- 折叠和展开较长的 AI 回复
-- 每条消息提供更多 / 收起控制
-- 可选择隐藏 ChatGPT 原生控件
-- 可调整侧边距离
-- 设置仅保存在本地
+### 对话时间线
 
-## 安装
+- 每个用户提问对应一个位置刻度
+- 刻度按提问在对话中的真实位置映射
+- 页面滚动时自动高亮当前轮次
+- 悬停先预览，再决定是否跳转
+- 点击刻度后将对应提问准确放到 ChatGPT 固定顶栏下方
+- 提供回到对话顶部和跳到对话底部按钮
+- 超长对话使用密集刻度，不产生第二层滚动
 
-获取最新版本：
+### 回答折叠
 
-- 官网：https://billowssun.github.io/threadpilot-for-chatgpt/
-- GitHub：https://github.com/billowssun/threadpilot-for-chatgpt
-- 最新版本：https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest
+- 自动折叠已经生成完成的长回答
+- 保留开头上下文、字数和明确的展开入口
+- 每条回答可独立展开或收起
+- 独立批量按钮根据状态执行折叠全部或展开全部，不占用时间线点击区域
+- 批量操作保持当前问题的视口位置和时间线轮次
+- ChatGPT 页面更新后仍保留当前对话中的手动选择
 
-安装后，打开或刷新 https://chatgpt.com/。
+## 设置
+
+弹窗只保留：
+
+- 对话时间线开关
+- 自动折叠长回答开关
+- 紧凑、平衡、宽松三档折叠强度
 
 ## 快捷键
 
-- `Alt + J`：显示 / 隐藏导航
-- `Alt + C`：折叠 / 展开较长的 AI 回复
-- `Alt + N`：下一条消息
-- `Alt + P`：上一条消息
+- `Alt + J`：显示或隐藏时间线
+- `Alt + C`：折叠或展开全部回答
+- `Alt + N`：跳到下一轮
+- `Alt + P`：跳到上一轮
+
+## 安装
+
+- 官网：https://billowssun.github.io/threadpilot-for-chatgpt/
+- 最新版本：https://github.com/billowssun/threadpilot-for-chatgpt/releases/latest
+
+安装后打开或刷新 https://chatgpt.com/。
 
 ## 隐私
 
-ThreadPilot 只使用浏览器本地存储保存扩展偏好设置。它不会上传你的对话内容，不使用远程分析，也不会插入广告。
-
-## 链接
-
-- 官网：https://billowssun.github.io/threadpilot-for-chatgpt/
-- 反馈：https://github.com/billowssun/threadpilot-for-chatgpt/issues
-- 隐私政策：https://github.com/billowssun/threadpilot-for-chatgpt/blob/main/PRIVACY_POLICY.md
-
-</details>
+ThreadPilot 只在浏览器同步存储中保存功能开关和折叠强度。对话正文只存在于当前 ChatGPT 页面，不会被扩展上传或持久化。

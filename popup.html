@@ -1,84 +1,81 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ThreadPilot for ChatGPT</title>
-  <style>
-    :root{color-scheme:light dark;--a:#10a37f;--b:#3b82f6;--panel:color-mix(in srgb,CanvasText 4%,Canvas);--panel2:color-mix(in srgb,CanvasText 7%,Canvas);--line:color-mix(in srgb,CanvasText 12%,transparent);--muted:color-mix(in srgb,CanvasText 58%,transparent);--soft:color-mix(in srgb,CanvasText 7%,transparent);--ok:color-mix(in srgb,var(--a) 14%,transparent)}*{box-sizing:border-box}body{width:346px;margin:0;padding:14px;background:Canvas;color:CanvasText;font:13px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}.hero{display:grid;grid-template-columns:42px 1fr;gap:11px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--a) 10%,transparent),color-mix(in srgb,var(--b) 7%,transparent)),var(--panel);box-shadow:0 10px 28px rgba(0,0,0,.08)}.mark{width:42px;height:42px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,var(--a),var(--b));color:#fff;font-weight:900}.title{min-width:0}h1{margin:0;font-size:16px;letter-spacing:0}.sub{margin:3px 0 0;color:var(--muted);font-size:12px}.summary{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.pill{min-height:24px;padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,CanvasText 4%,transparent);color:var(--muted);font-size:11px;font-weight:760}.pill.is-on{border-color:color-mix(in srgb,var(--a) 32%,var(--line));background:var(--ok);color:color-mix(in srgb,var(--a) 78%,CanvasText)}.section{margin-top:12px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.section-title{display:flex;align-items:center;justify-content:space-between;padding:0 4px 6px;color:var(--muted);font-size:11px;font-weight:820}.section-title span:last-child{font-weight:700}.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:42px;padding:8px;border-radius:8px}.row:hover{background:color-mix(in srgb,CanvasText 5%,transparent)}.label{display:grid;gap:2px;min-width:0}label{font-weight:740}.mini{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}input[type="checkbox"]{width:19px;height:19px;accent-color:var(--a);cursor:pointer}select,input[type="number"]{width:126px;background:var(--panel2);color:CanvasText;border:1px solid color-mix(in srgb,CanvasText 14%,transparent);border-radius:9px;padding:7px 9px;outline:none}input[type="number"]{text-align:right}.tip{min-height:38px;margin-top:10px;padding:10px 11px;border:1px solid color-mix(in srgb,var(--a) 18%,transparent);border-radius:10px;background:color-mix(in srgb,var(--a) 7%,transparent);color:color-mix(in srgb,CanvasText 78%,transparent);font-size:12px}.actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}button{height:36px;border:1px solid var(--line);border-radius:9px;background:var(--soft);color:CanvasText;cursor:pointer;font-weight:760}button:hover{border-color:color-mix(in srgb,var(--a) 42%,var(--line));background:color-mix(in srgb,var(--a) 9%,transparent)}.status{min-height:16px;margin-top:8px;color:var(--muted);font-size:11px;text-align:center}
-  </style>
-  <style>
-    .number-control{width:136px;display:grid;gap:5px}.number-control input[type="range"]{width:136px;accent-color:var(--a)}.number-field{display:flex;align-items:center;justify-content:flex-end;gap:5px}.number-field input[type="number"]{width:88px}.unit{min-width:20px;color:var(--muted);font-size:11px;font-weight:780}
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ThreadPilot</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header class="hero">
-    <div class="mark">TP</div>
-    <div class="title">
+  <header class="brand">
+    <div class="brand-mark" aria-hidden="true">TP</div>
+    <div>
       <h1>ThreadPilot</h1>
-      <p class="sub">ChatGPT 长对话导航助手</p>
+      <p>让长对话重新变得清晰</p>
     </div>
   </header>
 
-  <div class="summary" aria-label="当前设置摘要">
-    <span id="summaryEnabled" class="pill">导航</span>
-    <span id="summaryFold" class="pill">折叠</span>
-    <span id="summaryPerf" class="pill">流畅</span>
-  </div>
+  <main>
+    <section class="primary-settings" aria-label="核心功能">
+      <label class="setting-row" for="timelineEnabled">
+        <span class="setting-copy">
+          <strong>对话时间线</strong>
+          <small>按你的提问定位每一轮</small>
+        </span>
+        <span class="switch">
+          <input id="timelineEnabled" type="checkbox">
+          <span aria-hidden="true"></span>
+        </span>
+      </label>
 
-  <section class="section">
-    <div class="section-title"><span>快速控制</span><span>推荐</span></div>
-    <div class="row" data-tip="在 ChatGPT 页面侧边显示导航条，点击节点即可跳到对应消息。">
-      <div class="label"><label for="enabled">启用导航条</label><span class="mini">显示对话进度节点</span></div>
-      <input id="enabled" type="checkbox" />
-    </div>
-    <div class="row" data-tip="打开新对话或切换对话时，自动定位到最新消息附近。">
-      <div class="label"><label for="autoScrollToBottom">定位最新消息</label><span class="mini">减少停在中间</span></div>
-      <input id="autoScrollToBottom" type="checkbox" />
-    </div>
-    <div class="row" data-tip="降低长对话中的刷新频率，让页面滚动和输入更顺畅。">
-      <div class="label"><label for="performanceMode">流畅模式</label><span class="mini">适合很长的对话</span></div>
-      <input id="performanceMode" type="checkbox" />
-    </div>
-  </section>
+      <label class="setting-row" for="autoCollapse">
+        <span class="setting-copy">
+          <strong>自动折叠长回答</strong>
+          <small>保留摘要，需要时再展开</small>
+        </span>
+        <span class="switch">
+          <input id="autoCollapse" type="checkbox">
+          <span aria-hidden="true"></span>
+        </span>
+      </label>
+    </section>
 
-  <section class="section">
-    <div class="section-title"><span>导航显示</span><span>我的输入</span></div>
-    <div class="row" data-tip="选择导航条显示在页面左侧还是右侧。">
-      <div class="label"><label for="side">导航位置</label><span class="mini">左侧或右侧</span></div>
-      <select id="side"><option value="right">右侧</option><option value="left">左侧</option></select>
-    </div>
-    <div class="row" data-tip="调节导航条到屏幕边缘的距离，方便避开其他悬浮控件。">
-      <div class="label"><label for="navOffset">侧边距离</label><span class="mini">避开悬浮控件</span></div>
-      <div class="number-control">
-        <input id="navOffsetRange" type="range" min="6" max="140" step="4" aria-label="侧边距离滑块" />
-        <div class="number-field"><input id="navOffset" type="number" min="6" max="140" step="4" /><span class="unit">px</span></div>
+    <fieldset class="fold-density">
+      <legend>
+        <span>自动折叠强度</span>
+        <small id="presetHint">平衡阅读空间与上下文</small>
+      </legend>
+      <div class="segment">
+        <label>
+          <input type="radio" name="foldPreset" value="compact">
+          <span>紧凑</span>
+        </label>
+        <label>
+          <input type="radio" name="foldPreset" value="balanced">
+          <span>平衡</span>
+        </label>
+        <label>
+          <input type="radio" name="foldPreset" value="relaxed">
+          <span>宽松</span>
+        </label>
       </div>
-    </div>
-    <div class="row" data-tip="隐藏 ChatGPT 自带的侧边导航，避免和 ThreadPilot 导航条重叠。">
-      <div class="label"><label for="hideOfficialNav">隐藏原生导航</label><span class="mini">减少界面重叠</span></div>
-      <input id="hideOfficialNav" type="checkbox" />
-    </div>
-  </section>
+    </fieldset>
 
-  <section class="section">
-    <div class="section-title"><span>阅读辅助</span><span>AI</span></div>
-    <div class="row" data-tip="只折叠 AI 的长回复，你自己的输入会保持完整可见。">
-      <div class="label"><label for="aiCollapseEnabled">折叠 AI 长回复</label><span class="mini">用“展开”查看全文</span></div>
-      <input id="aiCollapseEnabled" type="checkbox" />
-    </div>
-    <div class="row" data-tip="设置 AI 回复折叠后保留的可见高度。">
-      <div class="label"><label for="collapseHeight">保留高度</label><span class="mini">折叠后显示多少开头</span></div>
-      <div class="number-control">
-        <input id="collapseHeightRange" type="range" min="260" max="900" step="20" aria-label="保留高度滑块" />
-        <div class="number-field"><input id="collapseHeight" type="number" min="260" max="900" step="20" /><span class="unit">px</span></div>
-      </div>
-    </div>
-  </section>
+    <section class="shortcuts" aria-label="快捷键">
+      <div class="section-title">快捷键</div>
+      <dl>
+        <div><dt>时间线</dt><dd><kbd>Alt</kbd><span>+</span><kbd>J</kbd></dd></div>
+        <div><dt>折叠 / 展开全部</dt><dd><kbd>Alt</kbd><span>+</span><kbd>C</kbd></dd></div>
+        <div><dt>上一轮 / 下一轮</dt><dd><kbd>Alt</kbd><span>+</span><kbd>P</kbd><span>/</span><kbd>N</kbd></dd></div>
+      </dl>
+    </section>
+  </main>
 
-  <div id="helpText" class="tip">把鼠标放到某个设置上，可以查看这项功能的说明。</div>
-  <div class="actions"><button id="githubBtn" type="button">GitHub</button><button id="aboutBtn" type="button">关于项目</button><button id="resetBtn" type="button">恢复推荐</button></div>
-  <div id="status" class="status"></div>
+  <footer>
+    <span id="status" role="status" aria-live="polite">设置自动保存</span>
+    <a href="https://github.com/billowssun/threadpilot-for-chatgpt" target="_blank" rel="noreferrer">反馈</a>
+  </footer>
+
   <script src="popup.js"></script>
 </body>
 </html>

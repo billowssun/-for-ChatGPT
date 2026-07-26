@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>批量折叠与时间线冲突修复对照</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #e9eaec;
+      color: #202124;
+      font: 600 14px/1.4 system-ui, sans-serif;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    figure {
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+    figcaption { padding: 10px 12px; }
+    img { width: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <figure>
+      <figcaption>修复前：批量菜单覆盖轨道，按钮右侧命中时间线</figcaption>
+      <img src="01-before-overlap.jpg" alt="修复前的控件重叠">
+    </figure>
+    <figure>
+      <figcaption>修复后：独立根节点和批量按钮，不占用轨道点击层</figcaption>
+      <img src="06-final-separated-roots.jpg" alt="修复后的独立批量折叠按钮">
+    </figure>
+  </main>
+</body>
+</html>

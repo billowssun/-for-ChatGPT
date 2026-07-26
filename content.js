@@ -1,660 +1,965 @@
 (() => {
   'use strict';
 
-  const EXT_ID = 'conversation-navigator';
+  const ROOT_ID = 'threadpilot';
+  const FOLD_ACTIONS_ID = 'threadpilot-fold-actions';
+  const CONTROL_ATTR = 'data-threadpilot-control';
   const DEFAULTS = {
-    enabled: true,
-    hideOfficialNav: false,
-    officialNavSelector: 'div.fixed.top-1\\/2.z-20.-translate-y-1\\/2.inset-e-4',
-    navOffset: 64,
-    aiCollapseEnabled: true,
-    filter: 'user',
-    side: 'right',
-    collapseHeight: 360,
-    autoScrollToBottom: true,
-    performanceMode: true
+    timelineEnabled: true,
+    autoCollapse: true,
+    foldPreset: 'balanced'
   };
+  const FOLD_PRESETS = {
+    compact: { height: 300, chars: 700 },
+    balanced: { height: 420, chars: 1000 },
+    relaxed: { height: 620, chars: 1800 }
+  };
+  const MESSAGE_SELECTORS = [
+    '[data-message-author-role]',
+    '[data-testid^="conversation-turn-"] [data-message-author-role]'
+  ];
+  const CONTENT_SELECTORS = [
+    '.markdown',
+    '[data-message-id] .markdown',
+    '[data-message-id]',
+    '.whitespace-pre-wrap'
+  ];
 
   const state = {
     settings: { ...DEFAULTS },
     root: null,
+    foldRoot: null,
+    viewport: null,
     track: null,
-    dots: null,
-    thumb: null,
+    position: null,
+    foldAllToggle: null,
     preview: null,
-    foldBtn: null,
-    count: null,
-    messages: [],
-    visible: [],
-    expanded: new Set(),
-    textCache: new Map(),
-    drag: false,
-    lastScrollKey: '',
-    timer: 0,
-    foldTimer: 0,
+    previewTurn: null,
+    turns: [],
+    manualFold: new Map(),
+    autoEvaluated: new Set(),
+    activeIndex: -1,
+    routeKey: '',
+    rebuildTimer: 0,
+    scrollFrame: 0,
+    geometryFrame: 0,
+    highlightTimer: 0,
+    navigationUnlockTimer: 0,
     observer: null,
-    locationKey: '',
-    bottomScrollTimer: 0,
-    bottomScrollInterval: 0,
-    bottomScrollUntil: 0,
-    bottomLastHeight: 0,
-    bottomStableTicks: 0
+    dragging: false,
+    dragIndex: -1,
+    pointerActive: false,
+    pointerStartY: 0,
+    suppressNodeClickUntil: 0,
+    scrollContainer: null,
+    turnRatios: [],
+    navigationLockIndex: -1,
+    navigationLockUntil: 0
   };
 
-  const $all = (root, selector) => {
-    try { return [...root.querySelectorAll(selector)]; } catch { return []; }
-  };
-  const closest = (el, selector) => {
-    try { return el && el.closest ? el.closest(selector) : null; } catch { return null; }
-  };
-  const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
-  const text = (s) => String(s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
-  const isOur = (el) => !!(el && (el.id === EXT_ID || closest(el, `#${EXT_ID}`) || closest(el, '[data-cn-more-button="true"]')));
-  const isEditableTarget = (el) => !!closest(el, 'input, textarea, select, [contenteditable="true"], [role="textbox"]');
-  const MESSAGE_CONTENT_SELECTORS = [
-    '[data-message-author-role] .markdown',
-    '[data-message-author-role] [data-message-id]',
-    '[data-message-author-role] [data-testid="conversation-turn-content"]',
-    '[data-message-author-role] [class*="whitespace-pre-wrap"]',
-    '[data-message-author-role]'
-  ];
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const normalizeText = (value) => String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  const OFFICIAL_NAV_SELECTORS = [
-    DEFAULTS.officialNavSelector,
-    '[data-testid*="conversation"][data-testid*="nav"]',
-    '[aria-label*="previous" i], [aria-label*="next" i], [aria-label*="上一" i], [aria-label*="下一" i]',
-    '[class*="top-1/2"], [class*="-translate-y-1/2"], .fixed.top-1\\/2, .fixed.-translate-y-1\\/2'
-  ];
+  function queryAll(root, selector) {
+    try {
+      return [...root.querySelectorAll(selector)];
+    } catch {
+      return [];
+    }
+  }
+
+  function closest(root, selector) {
+    try {
+      return root?.closest?.(selector) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function isThreadPilotNode(node) {
+    if (!(node instanceof Element)) return false;
+    return node.id === ROOT_ID
+      || node.id === FOLD_ACTIONS_ID
+      || Boolean(closest(node, `#${ROOT_ID}`))
+      || Boolean(closest(node, `#${FOLD_ACTIONS_ID}`))
+      || node.hasAttribute(CONTROL_ATTR)
+      || Boolean(closest(node, `[${CONTROL_ATTR}]`));
+  }
+
+  function hash(value) {
+    let result = 2166136261;
+    const input = String(value || '');
+    for (let index = 0; index < input.length; index += 1) {
+      result ^= input.charCodeAt(index);
+      result = Math.imul(result, 16777619);
+    }
+    return (result >>> 0).toString(36);
+  }
+
+  function currentConversationKey() {
+    return `${location.pathname}${location.search}`;
+  }
+
+  function assetUrl(path) {
+    return globalThis.chrome?.runtime?.getURL
+      ? globalThis.chrome.runtime.getURL(path)
+      : `../${path}`;
+  }
+
+  function isDocumentScroller(scroller) {
+    return !scroller
+      || scroller === document.scrollingElement
+      || scroller === document.documentElement
+      || scroller === document.body;
+  }
+
+  function findScrollContainer(element) {
+    let parent = element?.parentElement;
+    while (parent && parent !== document.body && parent !== document.documentElement) {
+      const style = getComputedStyle(parent);
+      const scrollable = /(auto|scroll|overlay)/.test(style.overflowY)
+        && parent.scrollHeight > parent.clientHeight + 8;
+      if (scrollable) return parent;
+      parent = parent.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  function scrollerViewport(scroller) {
+    if (isDocumentScroller(scroller)) {
+      return { top: 0, bottom: window.innerHeight, height: window.innerHeight };
+    }
+    const rect = scroller.getBoundingClientRect();
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      height: rect.height
+    };
+  }
+
+  function scrollerTop(scroller) {
+    return isDocumentScroller(scroller)
+      ? window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0
+      : scroller.scrollTop;
+  }
+
+  function scrollerMax(scroller) {
+    if (isDocumentScroller(scroller)) {
+      const page = document.scrollingElement || document.documentElement;
+      return Math.max(0, page.scrollHeight - window.innerHeight);
+    }
+    return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  }
+
+  function scrollScroller(scroller, top, behavior = 'smooth') {
+    const next = clamp(top, 0, scrollerMax(scroller));
+    if (isDocumentScroller(scroller)) {
+      window.scrollTo({ top: next, behavior });
+    } else {
+      scroller.scrollTo({ top: next, behavior });
+    }
+  }
+
+  function navigationAnchor(scroller) {
+    const viewport = scrollerViewport(scroller);
+    return viewport.top + clamp(viewport.height * 0.14, 84, 112);
+  }
 
   function readSettings() {
-    chrome.storage.sync.get(DEFAULTS, (items) => {
-      state.settings = { ...DEFAULTS, ...items };
-      if (typeof items.aiFoldEnabled === 'boolean' && typeof items.aiCollapseEnabled !== 'boolean') {
-        state.settings.aiCollapseEnabled = items.aiFoldEnabled;
-      }
-      if (state.settings.filter !== 'user') {
-        state.settings.filter = 'user';
-        chrome.storage.sync.set({ filter: 'user' });
-      }
-      applySettings();
+    chrome.storage.sync.get(null, (items) => {
+      state.settings = {
+        timelineEnabled: typeof items.timelineEnabled === 'boolean'
+          ? items.timelineEnabled
+          : items.enabled !== false,
+        autoCollapse: typeof items.autoCollapse === 'boolean'
+          ? items.autoCollapse
+          : items.aiCollapseEnabled !== false,
+        foldPreset: FOLD_PRESETS[items.foldPreset] ? items.foldPreset : DEFAULTS.foldPreset
+      };
       rebuild();
     });
   }
 
   function saveSettings(patch) {
-    if ('filter' in patch) patch.filter = 'user';
     state.settings = { ...state.settings, ...patch };
-    chrome.storage.sync.set(patch, () => {
-      applySettings();
-      rebuildSoon(80);
-    });
+    chrome.storage.sync.set(patch);
+    applySettings();
   }
 
-  function roleName(role) {
-    return role === 'assistant' ? 'AI' : role === 'user' ? '我' : '消息';
+  function messageRoot(roleNode) {
+    return closest(roleNode, '[data-testid^="conversation-turn-"]')
+      || closest(roleNode, 'article')
+      || closest(roleNode, '[data-message-id]')
+      || roleNode;
   }
 
-  function displayFilterName() {
-    return '我';
-  }
-
-  function previewIndex(item) {
-    const visibleIndex = state.visible.findIndex(m => m.key === item.key);
-    const visibleNumber = visibleIndex >= 0 ? visibleIndex + 1 : item.number;
-    return `${displayFilterName()} ${visibleNumber}/${state.visible.length} · 全部 ${item.number}/${state.messages.length}`;
-  }
-
-  function contentNodeFor(root, roleNode) {
-    if (!root) return roleNode || root;
-    for (const selector of MESSAGE_CONTENT_SELECTORS) {
-      const node = root.querySelector?.(selector);
-      if (node && !isOur(node)) return node;
+  function contentNode(roleNode, root) {
+    for (const selector of CONTENT_SELECTORS) {
+      const node = roleNode.matches?.(selector)
+        ? roleNode
+        : roleNode.querySelector?.(selector) || root.querySelector?.(selector);
+      if (node && !isThreadPilotNode(node)) return node;
     }
-    return roleNode || root;
+    return roleNode;
   }
 
-  function getReadableText(el, limit = 220) {
-    if (!el) return '';
-    const clone = el.cloneNode(true);
-    clone.querySelectorAll?.([
+  function readableText(node, limit = 2400) {
+    if (!node) return '';
+    const clone = node.cloneNode(true);
+    queryAll(clone, [
+      `#${ROOT_ID}`,
+      `[${CONTROL_ATTR}]`,
       'button',
-      'svg',
-      'img',
-      'pre .hljs-copy-button',
-      '[aria-hidden="true"]',
-      '[data-cn-more-button="true"]',
+      'nav',
+      'textarea',
+      'input',
+      '[contenteditable="true"]',
       '[data-testid*="copy"]',
-      '[data-testid*="feedback"]',
-      '[data-testid*="share"]',
-      '[data-testid*="voice"]'
-    ].join(',')).forEach(node => node.remove());
-    const raw = text(clone.innerText || clone.textContent || '');
-    return raw
-      .replace(/^(ChatGPT|Assistant|You|用户|助手|我)\s*[:：]?\s*/i, '')
-      .replace(/\b(Copy|Copied|Good response|Bad response|Read aloud|Edit message)\b|复制|已复制|朗读|编辑|赞|踩/gi, '')
-      .trim()
-      .slice(0, limit);
+      '[data-testid*="feedback"]'
+    ].join(',')).forEach((item) => item.remove());
+    const value = normalizeText(clone.innerText || clone.textContent);
+    return value.length > limit ? `${value.slice(0, limit)}…` : value;
   }
 
-  function ensureItemText(item, limit = 240) {
-    if (!item) return '';
-    const cached = state.textCache.get(item.key);
-    if (cached) {
-      item.text = cached;
-      return cached.slice(0, limit);
-    }
-    const value = getReadableText(item.content || item.root, Math.max(limit, 240));
-    if (value) state.textCache.set(item.key, value);
-    item.text = value;
-    return value.slice(0, limit);
-  }
+  function stableMessageKey(roleNode, root, role, index, text) {
+    const messageId = root.getAttribute?.('data-message-id')
+      || roleNode.getAttribute?.('data-message-id')
+      || root.querySelector?.('[data-message-id]')?.getAttribute('data-message-id');
+    if (messageId) return messageId;
 
-  function detectRole(root) {
-    const roleNode = root.matches?.('[data-message-author-role]') ? root : root.querySelector?.('[data-message-author-role]');
-    const role = roleNode?.getAttribute('data-message-author-role');
-    return role === 'assistant' || role === 'user'
-      ? { role, content: contentNodeFor(root, roleNode) }
-      : { role: 'message', content: root };
-  }
+    const testId = root.getAttribute?.('data-testid');
+    if (testId) return `${testId}:${role}`;
 
-  function messageKey(root, role, index) {
-    const node = root.matches?.('[data-message-id]') ? root : root.querySelector?.('[data-message-id]');
-    const id = node?.getAttribute('data-message-id') || root.getAttribute('data-testid') || '';
-    if (id) return `${role}:${id}`;
-    return `${role}:${index}`;
+    return `${currentConversationKey()}:${role}:${index}:${hash(text.slice(0, 320))}`;
   }
 
   function collectMessages() {
     const main = document.querySelector('main') || document.body;
-    const roots = [];
     const seen = new Set();
-    const add = (node) => {
-      const root = closest(node, 'article[data-testid^="conversation-turn-"]') || closest(node, '[data-testid^="conversation-turn-"]') || closest(node, 'article') || node;
-      if (!root || seen.has(root) || isOur(root)) return;
-      if (root.querySelector?.('[data-cn-hidden-official-nav="true"]')) return;
-      const rect = root.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      seen.add(root);
-      roots.push(root);
-    };
-    $all(main, '[data-message-author-role="assistant"], [data-message-author-role="user"]').forEach(add);
-    if (roots.length < 2) $all(main, 'article').forEach(add);
-    roots.sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
-    return roots.map((root, index) => {
-      const { role, content } = detectRole(root);
-      const key = messageKey(root, role, index);
-      const cachedText = state.textCache.get(key) || '';
-      return { root, content, role, index, number: index + 1, key, text: cachedText };
-    }).filter(x => x.role === 'assistant' || x.role === 'user' || ensureItemText(x, 80).length > 1);
-  }
+    const roleNodes = [];
 
-  function ensureUi() {
-    if (state.root?.isConnected) return;
-    const root = document.createElement('aside');
-    root.id = EXT_ID;
-    root.innerHTML = `
-      <div class="cn-track" title="点击或拖动，快速跳到我的输入"><div class="cn-line"></div><div class="cn-dots"></div><div class="cn-thumb"></div></div>
-      <div class="cn-count">0</div>
-      <button class="cn-fold-btn" type="button" title="开启或关闭 AI 长回复折叠">折叠</button>
-      <div class="cn-preview" aria-hidden="true"><div class="cn-preview-meta"><span class="cn-preview-badge"></span><span class="cn-preview-index"></span></div><div class="cn-preview-body"></div><div class="cn-preview-hint">点击节点即可跳转</div></div>
-    `;
-    document.body.appendChild(root);
-    state.root = root;
-    state.track = root.querySelector('.cn-track');
-    state.dots = root.querySelector('.cn-dots');
-    state.thumb = root.querySelector('.cn-thumb');
-    state.preview = root.querySelector('.cn-preview');
-    state.foldBtn = root.querySelector('.cn-fold-btn');
-    state.count = root.querySelector('.cn-count');
+    for (const selector of MESSAGE_SELECTORS) {
+      queryAll(main, selector).forEach((node) => {
+        if (!seen.has(node) && !isThreadPilotNode(node)) {
+          seen.add(node);
+          roleNodes.push(node);
+        }
+      });
+    }
 
-    state.track.setAttribute('role', 'slider');
-    state.track.setAttribute('tabindex', '0');
-    state.track.setAttribute('aria-label', 'ThreadPilot 我的输入导航');
-    state.track.setAttribute('aria-orientation', 'vertical');
-    state.track.setAttribute('aria-valuemin', '1');
-    state.track.setAttribute('aria-valuemax', '1');
-    state.track.setAttribute('aria-valuenow', '1');
-
-    state.foldBtn.addEventListener('click', () => {
-      const next = !state.settings.aiCollapseEnabled;
-      saveSettings({ aiCollapseEnabled: next, aiFoldEnabled: next });
-    });
-    bindTrack();
-  }
-
-  function bindTrack() {
-    const at = (event) => {
-      const rect = state.track.getBoundingClientRect();
-      const p = clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0, 1);
-      const targetIndex = p * Math.max(0, state.messages.length - 1);
-      return state.visible.reduce((nearest, item) => {
-        if (!nearest) return item;
-        return Math.abs(item.index - targetIndex) < Math.abs(nearest.index - targetIndex) ? item : nearest;
-      }, null);
-    };
-    state.track.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      state.drag = true;
-      state.track.setPointerCapture?.(e.pointerId);
-      const item = at(e);
-      if (item) scrollTo(item);
-    });
-    state.track.addEventListener('pointermove', (e) => {
-      const item = at(e);
-      if (item) showPreview(item, e.clientX, e.clientY);
-      if (state.drag && item) scrollTo(item, 'auto');
-    });
-    state.track.addEventListener('pointerup', (e) => {
-      state.drag = false;
-      state.lastScrollKey = '';
-      state.track.releasePointerCapture?.(e.pointerId);
-      hidePreview(160);
-    });
-    state.track.addEventListener('pointerleave', () => { if (!state.drag) hidePreview(100); });
-    state.track.addEventListener('keydown', (e) => {
-      if (!state.visible.length) return;
-      const current = currentVisibleIndex();
-      const keyMap = {
-        ArrowDown: current + 1,
-        ArrowRight: current + 1,
-        PageDown: current + 3,
-        ArrowUp: current - 1,
-        ArrowLeft: current - 1,
-        PageUp: current - 3,
-        Home: 0,
-        End: state.visible.length - 1
-      };
-      if (!(e.key in keyMap)) return;
-      e.preventDefault();
-      jumpToVisibleIndex(keyMap[e.key]);
-    });
-  }
-
-  function visibleMessages() {
-    return state.messages.filter(m => m.role === 'user');
-  }
-
-  function itemPosition(item, fallbackIndex = 0, fallbackCount = state.visible.length) {
-    const total = state.messages.length;
-    if (total > 1 && Number.isFinite(item?.index)) return (item.index / (total - 1)) * 100;
-    return fallbackCount <= 1 ? 0 : (fallbackIndex / (fallbackCount - 1)) * 100;
-  }
-
-  function render() {
-    ensureUi();
-    state.visible = visibleMessages();
-    state.dots.replaceChildren();
-    const count = state.visible.length;
-    const step = Math.max(1, Math.ceil(count / 150));
-    state.visible.forEach((item, i) => {
-      if (i % step) return;
-      const dot = document.createElement('button');
-      dot.type = 'button';
-      dot.className = `cn-dot cn-${item.role}`;
-      dot.dataset.globalIndex = String(item.index);
-      dot.style.top = `${itemPosition(item, i, count)}%`;
-      const itemText = ensureItemText(item, 80);
-      const dotLabel = `${roleName(item.role)} ${i + 1}/${count}${itemText ? ` - ${itemText.slice(0, 60)}` : ''}`;
-      dot.title = dotLabel;
-      dot.setAttribute('aria-label', `跳到${dotLabel}`);
-      dot.addEventListener('mouseenter', (e) => showPreview(item, e.clientX, e.clientY));
-      dot.addEventListener('mousemove', (e) => showPreview(item, e.clientX, e.clientY));
-      dot.addEventListener('mouseleave', () => hidePreview(100));
-      dot.addEventListener('focus', () => showPreviewForElement(item, dot));
-      dot.addEventListener('blur', () => hidePreview(80));
-      dot.addEventListener('click', (e) => { e.preventDefault(); scrollTo(item); });
-      state.dots.appendChild(dot);
-    });
-    state.count.textContent = String(state.visible.length);
-    state.count.title = `我的输入 ${state.visible.length} 条 · 全部 ${state.messages.length} 条`;
-    state.foldBtn.classList.toggle('is-on', state.settings.aiCollapseEnabled);
-    state.foldBtn.textContent = state.settings.aiCollapseEnabled ? '折叠' : '展开';
-    state.foldBtn.title = state.settings.aiCollapseEnabled ? '关闭 AI 长回复折叠' : '开启 AI 长回复折叠';
-    state.foldBtn.setAttribute('aria-label', state.foldBtn.title);
-    updateActive();
-  }
-
-  function showPreview(item, x, y) {
-    const p = state.preview;
-    if (!p) return;
-    const body = ensureItemText(item, 240);
-    p.dataset.role = item.role;
-    p.querySelector('.cn-preview-badge').textContent = roleName(item.role);
-    p.querySelector('.cn-preview-index').textContent = previewIndex(item);
-    p.querySelector('.cn-preview-body').textContent = body.length > 160 ? `${body.slice(0, 160)}…` : body;
-    const width = 348;
-    const left = clamp(x - width - 14, 14, window.innerWidth - width - 14);
-    const top = clamp(y, 90, window.innerHeight - 90);
-    p.style.left = `${left}px`;
-    p.style.top = `${top}px`;
-    p.classList.add('is-visible');
-  }
-
-  function showPreviewForElement(item, el) {
-    const rect = el?.getBoundingClientRect?.();
-    if (!rect) return;
-    showPreview(item, rect.left, rect.top + rect.height / 2);
-  }
-
-  function hidePreview(delay = 0) {
-    setTimeout(() => { if (!state.drag) state.preview?.classList.remove('is-visible'); }, delay);
-  }
-
-  function scrollTo(item, behavior = 'smooth') {
-    if (!item?.root) return;
-    if (state.drag && state.lastScrollKey === item.key) return;
-    state.lastScrollKey = item.key;
-    item.root.scrollIntoView({ block: 'start', behavior });
-    setTimeout(updateActive, 180);
-  }
-
-  function currentVisibleIndex() {
-    if (!state.visible.length) return 0;
-    const y = window.innerHeight * 0.28;
-    let previousVisibleIndex = -1;
-    let nearestVisibleIndex = 0;
-    let nearestDistance = Infinity;
-
-    state.visible.forEach((m, i) => {
-      if (!m.root?.isConnected) return;
-      const r = m.root.getBoundingClientRect();
-      const d = Math.abs(r.top - y);
-      if (r.bottom >= 0 && r.top <= window.innerHeight && d < nearestDistance) {
-        nearestDistance = d;
-        nearestVisibleIndex = i;
-      }
-      if (r.top <= y) previousVisibleIndex = i;
+    roleNodes.sort((a, b) => {
+      if (a === b) return 0;
+      const relation = a.compareDocumentPosition(b);
+      return relation & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
     });
 
-    return previousVisibleIndex >= 0 ? previousVisibleIndex : nearestVisibleIndex;
-  }
-
-  function jumpToVisibleIndex(index, behavior = 'smooth') {
-    if (!state.visible.length) return;
-    const target = state.visible[clamp(index, 0, state.visible.length - 1)];
-    if (target) scrollTo(target, behavior);
-  }
-
-  function updateActive() {
-    if (!state.visible.length || !state.thumb) return;
-    const vi = currentVisibleIndex();
-    const active = state.visible[vi];
-    const pct = itemPosition(active, vi, state.visible.length);
-    state.thumb.style.top = `${pct}%`;
-    state.track?.setAttribute('aria-valuemax', String(Math.max(1, state.visible.length)));
-    state.track?.setAttribute('aria-valuenow', String(Math.max(1, vi + 1)));
-    state.track?.setAttribute('aria-valuetext', `${roleName(active?.role)} ${vi + 1}/${state.visible.length}`);
-    state.dots?.querySelectorAll('.cn-dot').forEach((dot) => {
-      dot.classList.toggle('is-active', Number(dot.dataset.globalIndex) === active?.index);
-    });
-  }
-
-  function foldableAssistantItems() {
-    const main = document.querySelector('main') || document.body;
-    return $all(main, '[data-message-author-role="assistant"]').map((content, index) => {
-      const root = closest(content, '[data-testid^="conversation-turn-"]') || closest(content, 'article') || content;
-      const id = content.getAttribute('data-message-id') || root?.getAttribute?.('data-testid') || '';
-      const blockIndex = $all(root || main, '[data-message-author-role="assistant"]').indexOf(content);
+    return roleNodes.map((roleNode, index) => {
+      const role = roleNode.getAttribute('data-message-author-role');
+      const root = messageRoot(roleNode);
+      const content = contentNode(roleNode, root);
+      const text = readableText(content);
       return {
+        role,
         root,
+        roleNode,
         content,
-        role: 'assistant',
-        index,
-        key: id ? `assistant:${id}:${blockIndex}` : `assistant:${index}`
+        text,
+        key: stableMessageKey(roleNode, root, role, index, text)
       };
-    }).filter(item => item.root && item.content && !isOur(item.content));
+    }).filter((message) => (
+      (message.role === 'user' || message.role === 'assistant')
+      && message.root?.isConnected
+      && !isThreadPilotNode(message.root)
+    ));
   }
 
-  function findFoldTarget(item) {
-    return item?.content || item?.root || null;
-  }
+  function collectTurns() {
+    const messages = collectMessages();
+    const turns = [];
 
-  function clearFold(target) {
-    target.classList.remove('cn-fold-target', 'cn-collapsed', 'cn-expanded');
-    target.style.removeProperty('--cn-fold-height');
-  }
+    for (const message of messages) {
+      if (message.role === 'user') {
+        turns.push({
+          id: `turn-${message.key}`,
+          user: message,
+          assistant: null,
+          promptPreview: message.text || '未命名提问',
+          answerPreview: '',
+          answerLength: 0
+        });
+        continue;
+      }
 
-  function foldButtonFor(target, key) {
-    const existing = target.querySelector(`:scope > [data-cn-more-button="true"][data-cn-fold-key="${CSS.escape(key)}"]`);
-    if (existing) {
-      return existing;
+      const current = turns.at(-1);
+      if (current && !current.assistant) {
+        current.assistant = message;
+        current.answerPreview = message.text;
+        current.answerLength = message.text.length;
+      }
     }
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'cn-more-button';
-    btn.dataset.cnMoreButton = 'true';
-    btn.dataset.cnFoldKey = key;
-    btn.addEventListener('click', () => {
-      if (state.expanded.has(key)) state.expanded.delete(key);
-      else state.expanded.add(key);
-      applyFolds();
+
+    return turns;
+  }
+
+  function isStreaming(turn) {
+    const root = turn.assistant?.root;
+    if (!root) return true;
+    const rootStreaming = Boolean(
+      root.matches?.('.result-streaming')
+      || root.querySelector?.('.result-streaming')
+      || root.querySelector?.('[data-is-streaming="true"]')
+      || root.querySelector?.('[data-testid*="stop"]')
+    );
+    if (rootStreaming) return true;
+
+    const globalStopControl = document.querySelector([
+      'button[data-testid="stop-button"]',
+      'button[aria-label*="Stop generating"]',
+      'button[aria-label*="停止生成"]'
+    ].join(','));
+    return Boolean(globalStopControl && state.turns.at(-1)?.id === turn.id);
+  }
+
+  function preset() {
+    return FOLD_PRESETS[state.settings.foldPreset] || FOLD_PRESETS.balanced;
+  }
+
+  function isLongAnswer(turn) {
+    const content = turn.assistant?.content;
+    if (!content) return false;
+    const threshold = preset();
+    return turn.answerLength >= threshold.chars
+      || content.scrollHeight > threshold.height + 24;
+  }
+
+  function answerState(turn) {
+    if (!turn.assistant) return 'pending';
+    const manual = state.manualFold.get(turn.id);
+    if (manual) return manual;
+    if (!state.settings.autoCollapse || isStreaming(turn)) return 'expanded';
+    return isLongAnswer(turn) ? 'collapsed' : 'expanded';
+  }
+
+  function formatLength(length) {
+    return new Intl.NumberFormat(document.documentElement.lang || 'zh-CN').format(length || 0);
+  }
+
+  function ensureAnswerId(turn) {
+    const content = turn.assistant?.content;
+    if (!content) return '';
+    if (!content.id) content.id = `threadpilot-answer-${hash(turn.id)}`;
+    return content.id;
+  }
+
+  function foldControl(turn) {
+    const assistant = turn.assistant;
+    if (!assistant?.content) return null;
+
+    let control = assistant.root.querySelector?.(
+      `:scope [${CONTROL_ATTR}="fold"][data-turn-id="${CSS.escape(turn.id)}"]`
+    );
+    if (control) return control;
+
+    control = document.createElement('div');
+    control.className = 'tp-fold-control';
+    control.setAttribute(CONTROL_ATTR, 'fold');
+    control.dataset.turnId = turn.id;
+
+    const status = document.createElement('span');
+    status.className = 'tp-fold-status';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tp-fold-toggle';
+    button.addEventListener('click', () => {
+      const currentTurn = state.turns.find((item) => item.id === control.dataset.turnId);
+      if (!currentTurn) return;
+      const viewportAnchor = captureViewportAnchor();
+      const collapsed = answerState(currentTurn) === 'collapsed';
+      state.manualFold.set(currentTurn.id, collapsed ? 'expanded' : 'collapsed');
+      applyFold(currentTurn);
+      restoreViewportAnchor(viewportAnchor);
+      renderTimelineState();
+      scheduleTimelineGeometry();
     });
-    target.appendChild(btn);
-    return btn;
+
+    control.append(status, button);
+    assistant.content.insertAdjacentElement('afterend', control);
+    return control;
   }
 
-  function applyFolds() {
-    const activeTargets = new Set();
-    const activeKeys = new Set();
-    const activeButtons = new Set();
-    if (!state.settings.aiCollapseEnabled) {
-      document.querySelectorAll('.cn-fold-target').forEach(clearFold);
-      document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => btn.remove());
-      return;
+  function applyFold(turn) {
+    const assistant = turn.assistant;
+    if (!assistant?.content) return;
+
+    const contentId = ensureAnswerId(turn);
+    const control = foldControl(turn);
+    const status = answerState(turn);
+    const collapsed = status === 'collapsed';
+    const longAnswer = isLongAnswer(turn);
+
+    assistant.root.classList.add('tp-assistant-turn');
+    assistant.content.classList.toggle('tp-answer-collapsed', collapsed);
+    assistant.content.style.setProperty('--tp-fold-height', `${preset().height}px`);
+
+    if (control) {
+      control.dataset.collapsed = String(collapsed);
+      control.dataset.long = String(longAnswer);
+      const label = control.querySelector('.tp-fold-status');
+      const button = control.querySelector('.tp-fold-toggle');
+      label.textContent = collapsed
+        ? `已折叠 · ${formatLength(turn.answerLength)} 字`
+        : `${formatLength(turn.answerLength)} 字`;
+      button.textContent = collapsed ? '展开' : '收起';
+      button.setAttribute('aria-expanded', String(!collapsed));
+      button.setAttribute('aria-controls', contentId);
+      button.setAttribute(
+        'aria-label',
+        collapsed ? `展开第 ${state.turns.indexOf(turn) + 1} 轮回答` : `收起第 ${state.turns.indexOf(turn) + 1} 轮回答`
+      );
     }
 
-    const h = clamp(Number(state.settings.collapseHeight || 360), 260, 900);
-    foldableAssistantItems().forEach(item => {
-      const target = findFoldTarget(item);
-      if (!target) return;
-      const bodyText = getReadableText(target, 2000);
-      const shouldFold = target.scrollHeight >= h + 40 || bodyText.length >= 520;
-      if (!shouldFold) {
-        clearFold(target);
-        target.querySelectorAll(':scope > [data-cn-more-button="true"]').forEach(btn => btn.remove());
+    state.autoEvaluated.add(turn.id);
+  }
+
+  function clearOrphanedControls() {
+    const turnIds = new Set(state.turns.map((turn) => turn.id));
+    queryAll(document, `[${CONTROL_ATTR}="fold"]`).forEach((control) => {
+      if (!turnIds.has(control.dataset.turnId)) control.remove();
+    });
+    queryAll(document, '.tp-answer-collapsed').forEach((content) => {
+      const control = content.nextElementSibling;
+      if (!control?.matches?.(`[${CONTROL_ATTR}="fold"]`)) {
+        content.classList.remove('tp-answer-collapsed');
+      }
+    });
+  }
+
+  function applyAllFolds() {
+    state.turns.forEach(applyFold);
+    clearOrphanedControls();
+  }
+
+  function setAllFolds(mode) {
+    const viewportAnchor = captureViewportAnchor();
+    state.turns.forEach((turn) => {
+      if (turn.assistant && !isStreaming(turn)) {
+        state.manualFold.set(turn.id, mode);
+      }
+    });
+    applyAllFolds();
+    restoreViewportAnchor(viewportAnchor);
+    renderTimelineState();
+    scheduleTimelineGeometry();
+  }
+
+  function captureViewportAnchor() {
+    if (!state.turns.length) return null;
+    const index = clamp(state.activeIndex < 0 ? activeTurnIndex() : state.activeIndex, 0, state.turns.length - 1);
+    const root = state.turns[index]?.user?.root;
+    if (!root?.isConnected) return null;
+    const scroller = findScrollContainer(root);
+    const viewport = scrollerViewport(scroller);
+    return {
+      index,
+      root,
+      offset: root.getBoundingClientRect().top - viewport.top
+    };
+  }
+
+  function restoreViewportAnchor(anchor) {
+    if (!anchor?.root?.isConnected) return;
+    const scroller = findScrollContainer(anchor.root);
+    const viewport = scrollerViewport(scroller);
+    const nextOffset = anchor.root.getBoundingClientRect().top - viewport.top;
+    const delta = nextOffset - anchor.offset;
+    state.scrollContainer = scroller;
+    if (Math.abs(delta) > 0.5) {
+      scrollScroller(scroller, scrollerTop(scroller) + delta, 'auto');
+    }
+    lockNavigation(anchor.index, 180);
+  }
+
+  function createRoot() {
+    if (state.root?.isConnected) {
+      createFoldRoot();
+      return state.root;
+    }
+
+    const root = document.createElement('aside');
+    root.id = ROOT_ID;
+    root.setAttribute('aria-label', '对话时间线');
+    root.innerHTML = `
+      <div class="tp-rail-head">
+        <button class="tp-boundary-button" type="button" data-action="jump-top" aria-label="回到对话顶部">
+          <img src="${assetUrl('icons/ui/arrow-bar-to-up.svg')}" alt="">
+        </button>
+        <span class="tp-position" aria-live="polite">0 / 0</span>
+      </div>
+      <div class="tp-viewport">
+        <nav class="tp-track" aria-label="对话轮次">
+          <span class="tp-progress" aria-hidden="true"></span>
+        </nav>
+      </div>
+      <div class="tp-rail-foot">
+        <button class="tp-boundary-button" type="button" data-action="jump-bottom" aria-label="跳到对话底部">
+          <img src="${assetUrl('icons/ui/arrow-bar-to-down.svg')}" alt="">
+        </button>
+      </div>
+      <div class="tp-preview" role="tooltip" aria-hidden="true">
+        <div class="tp-preview-meta">
+          <strong class="tp-preview-index"></strong>
+          <span class="tp-preview-state"></span>
+        </div>
+        <div class="tp-preview-prompt"></div>
+        <div class="tp-preview-answer"></div>
+        <div class="tp-preview-hint">点击跳转</div>
+      </div>
+    `;
+
+    document.body.append(root);
+    state.root = root;
+    state.viewport = root.querySelector('.tp-viewport');
+    state.track = root.querySelector('.tp-track');
+    state.position = root.querySelector('.tp-position');
+    state.preview = root.querySelector('.tp-preview');
+
+    createFoldRoot();
+    root.querySelector('[data-action="jump-top"]').addEventListener('click', () => {
+      jumpToBoundary('top');
+    });
+    root.querySelector('[data-action="jump-bottom"]').addEventListener('click', () => {
+      jumpToBoundary('bottom');
+    });
+
+    bindTrackScrubber();
+    return root;
+  }
+
+  function createFoldRoot() {
+    if (state.foldRoot?.isConnected) return state.foldRoot;
+
+    const foldRoot = document.createElement('div');
+    foldRoot.id = FOLD_ACTIONS_ID;
+    foldRoot.setAttribute('aria-label', '批量折叠控制');
+    foldRoot.innerHTML = `
+      <button class="tp-fold-all-toggle" type="button" data-action="toggle-all-folds">
+        <img src="${assetUrl('icons/ui/arrows-minimize.svg')}" alt="">
+        <span class="tp-control-tooltip" aria-hidden="true">折叠全部回答</span>
+      </button>
+    `;
+    document.body.append(foldRoot);
+    state.foldRoot = foldRoot;
+    state.foldAllToggle = foldRoot.querySelector('.tp-fold-all-toggle');
+    state.foldAllToggle.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const eligible = state.turns.filter((turn) => turn.assistant && !isStreaming(turn));
+      const allCollapsed = eligible.length > 0
+        && eligible.every((turn) => answerState(turn) === 'collapsed');
+      setAllFolds(allCollapsed ? 'expanded' : 'collapsed');
+    });
+    return foldRoot;
+  }
+
+  function previewText(value, limit) {
+    const normalized = normalizeText(value);
+    if (!normalized) return '暂无内容';
+    return normalized.length > limit ? `${normalized.slice(0, limit)}…` : normalized;
+  }
+
+  function showPreview(turn, anchor) {
+    if (!state.preview || !turn) return;
+    state.previewTurn = turn;
+    const index = state.turns.indexOf(turn);
+    const foldState = answerState(turn);
+    const stateLabel = foldState === 'pending'
+      ? '正在生成'
+      : foldState === 'collapsed'
+        ? '已折叠'
+        : '已展开';
+
+    state.preview.querySelector('.tp-preview-index').textContent = `第 ${index + 1} 轮`;
+    state.preview.querySelector('.tp-preview-state').textContent = stateLabel;
+    state.preview.querySelector('.tp-preview-prompt').textContent = previewText(turn.promptPreview, 100);
+    state.preview.querySelector('.tp-preview-answer').textContent = turn.assistant
+      ? previewText(turn.answerPreview, 150)
+      : '等待 ChatGPT 回复';
+
+    const rect = anchor?.getBoundingClientRect?.();
+    const y = rect
+      ? clamp(rect.top + rect.height / 2, 120, window.innerHeight - 120)
+      : window.innerHeight / 2;
+    state.preview.style.setProperty('--tp-preview-y', `${y}px`);
+    state.preview.setAttribute('aria-hidden', 'false');
+  }
+
+  function hidePreview() {
+    if (!state.preview || state.dragging) return;
+    state.preview.setAttribute('aria-hidden', 'true');
+    state.previewTurn = null;
+  }
+
+  function jumpToTurn(turn, behavior = 'smooth') {
+    const root = turn?.user?.root;
+    if (!root?.isConnected) return;
+    const index = state.turns.indexOf(turn);
+    const scroller = findScrollContainer(root);
+    const viewport = scrollerViewport(scroller);
+    const destination = scrollerTop(scroller)
+      + root.getBoundingClientRect().top
+      - navigationAnchor(scroller);
+    state.scrollContainer = scroller;
+    lockNavigation(index, behavior === 'smooth' ? 2200 : 80);
+    scrollScroller(scroller, destination, behavior);
+    root.classList.add('tp-jump-target');
+    clearTimeout(state.highlightTimer);
+    state.highlightTimer = window.setTimeout(() => {
+      root.classList.remove('tp-jump-target');
+    }, 1300);
+  }
+
+  function jumpToBoundary(boundary, behavior = 'smooth') {
+    if (!state.turns.length) return;
+    const index = boundary === 'top' ? 0 : state.turns.length - 1;
+    const scroller = findScrollContainer(state.turns[index].user.root);
+    state.scrollContainer = scroller;
+    lockNavigation(index, behavior === 'smooth' ? 2200 : 80);
+    scrollScroller(scroller, boundary === 'top' ? 0 : scrollerMax(scroller), behavior);
+  }
+
+  function lockNavigation(index, duration) {
+    clearTimeout(state.navigationUnlockTimer);
+    state.navigationLockIndex = index;
+    state.navigationLockUntil = performance.now() + duration;
+    state.activeIndex = index;
+    renderTimelineState();
+    state.navigationUnlockTimer = window.setTimeout(() => {
+      state.navigationLockIndex = -1;
+      state.navigationLockUntil = 0;
+      updateActiveTurn(true);
+    }, duration);
+  }
+
+  function nodeForTurn(turn, index) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tp-node';
+    button.dataset.turnId = turn.id;
+    button.dataset.index = String(index);
+    button.setAttribute('aria-label', `第 ${index + 1} 轮：${previewText(turn.promptPreview, 70)}`);
+    button.innerHTML = '<span class="tp-tick" aria-hidden="true"></span>';
+
+    button.addEventListener('mouseenter', () => showPreview(turn, button));
+    button.addEventListener('mouseleave', hidePreview);
+    button.addEventListener('focus', () => showPreview(turn, button));
+    button.addEventListener('blur', hidePreview);
+    button.addEventListener('click', (event) => {
+      if (performance.now() < state.suppressNodeClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
-
-      activeTargets.add(target);
-      const key = item.key;
-      activeKeys.add(key);
-      target.classList.add('cn-fold-target', 'cn-collapsed');
-      target.classList.toggle('cn-expanded', state.expanded.has(key));
-      target.style.setProperty('--cn-fold-height', `${h}px`);
-      const btn = foldButtonFor(target, key);
-      if (!btn) return;
-      activeButtons.add(btn);
-      const expanded = state.expanded.has(key);
-      btn.textContent = expanded ? '收起' : '展开';
-      btn.setAttribute('aria-label', expanded ? '收起这条 AI 回复' : '展开这条 AI 回复');
+      jumpToTurn(turn);
     });
-
-    document.querySelectorAll('.cn-fold-target').forEach(el => {
-      if (!activeTargets.has(el)) clearFold(el);
-    });
-    document.querySelectorAll('[data-cn-more-button="true"]').forEach(btn => {
-      if (!activeKeys.has(btn.dataset.cnFoldKey) || !activeButtons.has(btn)) btn.remove();
-    });
+    return button;
   }
 
-  function scheduleFolds(delay) {
-    clearTimeout(state.foldTimer);
-    if (!state.settings.aiCollapseEnabled) {
-      applyFolds();
+  function renderTimeline() {
+    const root = createRoot();
+    const progress = document.createElement('span');
+    progress.className = 'tp-progress';
+    progress.setAttribute('aria-hidden', 'true');
+    state.track.replaceChildren(progress, ...state.turns.map(nodeForTurn));
+    root.hidden = !state.settings.timelineEnabled || state.turns.length <= 1;
+    updateTimelineGeometry();
+    updateActiveTurn(true);
+  }
+
+  function renderTimelineState() {
+    if (!state.root?.isConnected) return;
+    const nodes = queryAll(state.track, '.tp-node');
+    nodes.forEach((node, index) => {
+      const turn = state.turns[index];
+      node.classList.toggle('is-active', index === state.activeIndex);
+      node.classList.toggle('is-collapsed', answerState(turn) === 'collapsed');
+      node.setAttribute('aria-current', index === state.activeIndex ? 'step' : 'false');
+    });
+    const ratio = state.turnRatios[state.activeIndex] ?? 0;
+    state.track?.style.setProperty('--tp-progress', `${clamp(ratio, 0, 1) * 100}%`);
+    state.position.textContent = state.turns.length
+      ? `${Math.max(0, state.activeIndex) + 1} / ${state.turns.length}`
+      : '0 / 0';
+    renderFoldAllToggle();
+  }
+
+  function renderFoldAllToggle() {
+    if (!state.foldAllToggle?.isConnected) return;
+    const eligible = state.turns.filter((turn) => turn.assistant && !isStreaming(turn));
+    const allCollapsed = eligible.length > 0
+      && eligible.every((turn) => answerState(turn) === 'collapsed');
+    const label = allCollapsed ? '展开全部回答' : '折叠全部回答';
+    const icon = allCollapsed ? 'arrows-maximize.svg' : 'arrows-minimize.svg';
+    state.foldRoot.hidden = eligible.length <= 1;
+    state.foldAllToggle.disabled = eligible.length === 0;
+    state.foldAllToggle.dataset.mode = allCollapsed ? 'expand' : 'collapse';
+    state.foldAllToggle.setAttribute('aria-label', label);
+    state.foldAllToggle.setAttribute('title', label);
+    state.foldAllToggle.querySelector('img').src = assetUrl(`icons/ui/${icon}`);
+    state.foldAllToggle.querySelector('.tp-control-tooltip').textContent = label;
+  }
+
+  function updateTimelineGeometry() {
+    if (!state.track?.isConnected || !state.turns.length) {
+      state.turnRatios = [];
       return;
     }
-    state.foldTimer = setTimeout(applyFolds, delay);
-  }
 
-  function isOfficialNavCandidate(el) {
-    if (!el || isOur(el) || closest(el, `#${EXT_ID}, form, textarea, [contenteditable="true"]`)) return false;
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    if (rect.height > window.innerHeight * 0.45 || rect.width > 180) return false;
-    const style = getComputedStyle(el);
-    if (style.position !== 'fixed' && style.position !== 'sticky') return false;
+    const scroller = findScrollContainer(state.turns[0].user.root);
+    const viewport = scrollerViewport(scroller);
+    const scrollTop = scrollerTop(scroller);
+    const points = state.turns.map((turn) => (
+      scrollTop + turn.user.root.getBoundingClientRect().top - viewport.top
+    ));
+    const first = points[0];
+    const span = Math.max(1, points[points.length - 1] - first);
+    state.scrollContainer = scroller;
+    state.turnRatios = points.map((point) => clamp((point - first) / span, 0, 1));
 
-    const label = text(el.getAttribute('aria-label') || el.textContent || '');
-    const hasPrevNext = /previous|next|上一|下一|向上|向下/i.test(label);
-    const hasControl = !!el.querySelector('button, a, [role="button"]');
-    const nearSide = rect.left <= 120 || window.innerWidth - rect.right <= 180;
-    const nearMiddle = rect.top < window.innerHeight * 0.78 && rect.bottom > window.innerHeight * 0.14;
-    return nearSide && nearMiddle && (hasPrevNext || hasControl);
-  }
-
-  function officialNavCandidates() {
-    const found = new Set();
-    const add = (el) => {
-      const root = closest(el, 'div.fixed, nav, aside, [role="navigation"]') || el;
-      if (isOfficialNavCandidate(root)) found.add(root);
-    };
-
-    const selectors = [
-      state.settings.officialNavSelector || DEFAULTS.officialNavSelector,
-      ...OFFICIAL_NAV_SELECTORS
-    ];
-    selectors.forEach(selector => $all(document, selector).forEach(add));
-    $all(document, 'body > div, body > nav, body > aside, [role="navigation"], [aria-label]').forEach((el) => {
-      if (isOfficialNavCandidate(el)) found.add(el);
+    queryAll(state.track, '.tp-node').forEach((node, index) => {
+      const ratio = state.turnRatios[index];
+      const start = index === 0
+        ? 0
+        : (state.turnRatios[index - 1] + ratio) / 2;
+      const end = index === state.turnRatios.length - 1
+        ? 1
+        : (ratio + state.turnRatios[index + 1]) / 2;
+      const localPoint = end === start ? 0.5 : (ratio - start) / (end - start);
+      node.style.top = `${start * 100}%`;
+      node.style.height = `${Math.max(0.001, end - start) * 100}%`;
+      node.style.setProperty('--tp-node-point', `${clamp(localPoint, 0, 1) * 100}%`);
     });
-    return [...found];
+    renderTimelineState();
   }
 
-  function restoreOfficialNav() {
-    document.querySelectorAll('[data-cn-hidden-official-nav="true"]').forEach(el => {
-      if (el.dataset.cnPreviousDisplay) el.style.display = el.dataset.cnPreviousDisplay;
-      else el.style.removeProperty('display');
-      delete el.dataset.cnPreviousDisplay;
-      el.removeAttribute('data-cn-hidden-official-nav');
+  function scheduleTimelineGeometry() {
+    if (state.geometryFrame) cancelAnimationFrame(state.geometryFrame);
+    state.geometryFrame = requestAnimationFrame(() => {
+      state.geometryFrame = 0;
+      updateTimelineGeometry();
     });
   }
 
-  function hideOfficialNav() {
-    if (!state.settings.hideOfficialNav) {
-      restoreOfficialNav();
-      return;
-    }
-    officialNavCandidates().forEach(el => {
-      if (!el.dataset.cnHiddenOfficialNav) {
-        el.dataset.cnPreviousDisplay = el.style.display || '';
+  function nearestTurnIndex(clientY) {
+    const rect = state.track?.getBoundingClientRect();
+    if (!rect || !state.turns.length) return -1;
+    const ratio = clamp((clientY - rect.top) / rect.height, 0, 1);
+    let nearest = 0;
+    let distance = Number.POSITIVE_INFINITY;
+    state.turnRatios.forEach((turnRatio, index) => {
+      const nextDistance = Math.abs(turnRatio - ratio);
+      if (nextDistance < distance) {
+        distance = nextDistance;
+        nearest = index;
       }
-      el.style.setProperty('display', 'none', 'important');
-      el.setAttribute('data-cn-hidden-official-nav', 'true');
+    });
+    return nearest;
+  }
+
+  function previewDragIndex(index) {
+    if (index < 0 || index === state.dragIndex) return;
+    state.dragIndex = index;
+    const node = state.track.querySelector(`.tp-node[data-index="${index}"]`);
+    showPreview(state.turns[index], node);
+    queryAll(state.track, '.tp-node').forEach((item, itemIndex) => {
+      item.classList.toggle('is-scrubbed', itemIndex === index);
     });
   }
 
-  function currentLocationKey() {
-    return `${location.pathname}${location.search}`;
-  }
+  function bindTrackScrubber() {
+    state.track.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      state.pointerActive = true;
+      state.dragging = false;
+      state.pointerStartY = event.clientY;
+      state.dragIndex = nearestTurnIndex(event.clientY);
+      state.track.setPointerCapture?.(event.pointerId);
+    });
 
-  function scrollConversationToBottom() {
-    if (!state.settings.autoScrollToBottom || !state.messages.length) return;
-    const last = state.messages[state.messages.length - 1];
-    requestAnimationFrame(() => {
-      last?.root?.scrollIntoView({ block: 'end', behavior: 'auto' });
-      setTimeout(updateActive, 80);
+    state.track.addEventListener('pointermove', (event) => {
+      if (!state.pointerActive) return;
+      if (!state.dragging && Math.abs(event.clientY - state.pointerStartY) < 5) return;
+      state.dragging = true;
+      event.preventDefault();
+      previewDragIndex(nearestTurnIndex(event.clientY));
+    });
+
+    state.track.addEventListener('pointerup', (event) => {
+      if (!state.pointerActive) return;
+      const completedDrag = state.dragging;
+      state.pointerActive = false;
+      state.track.releasePointerCapture?.(event.pointerId);
+      if (completedDrag && state.dragIndex >= 0) {
+        event.preventDefault();
+        state.suppressNodeClickUntil = performance.now() + 160;
+        jumpToTurn(state.turns[state.dragIndex]);
+      }
+      state.dragging = false;
+      state.dragIndex = -1;
+      queryAll(state.track, '.tp-node').forEach((item) => item.classList.remove('is-scrubbed'));
+      hidePreview();
+    });
+
+    state.track.addEventListener('pointercancel', () => {
+      state.pointerActive = false;
+      state.dragging = false;
+      state.dragIndex = -1;
+      hidePreview();
     });
   }
 
-  function stopBottomLock() {
-    clearTimeout(state.bottomScrollTimer);
-    clearInterval(state.bottomScrollInterval);
-    state.bottomScrollTimer = 0;
-    state.bottomScrollInterval = 0;
-    state.bottomScrollUntil = 0;
-    state.bottomLastHeight = 0;
-    state.bottomStableTicks = 0;
-  }
-
-  function bottomLockTick() {
-    if (!state.settings.autoScrollToBottom || Date.now() > state.bottomScrollUntil) {
-      stopBottomLock();
-      return;
+  function activeTurnIndex() {
+    if (!state.turns.length) return -1;
+    if (
+      state.navigationLockIndex >= 0
+      && performance.now() < state.navigationLockUntil
+    ) {
+      return state.navigationLockIndex;
     }
-    const scroller = document.scrollingElement || document.documentElement;
-    const height = scroller.scrollHeight;
-    state.bottomStableTicks = Math.abs(height - state.bottomLastHeight) <= 2 ? state.bottomStableTicks + 1 : 0;
-    state.bottomLastHeight = height;
-    scrollConversationToBottom();
-    if (state.bottomStableTicks >= 5) stopBottomLock();
+    const scroller = findScrollContainer(state.turns[0].user.root);
+    const top = scrollerTop(scroller);
+    const max = scrollerMax(scroller);
+    if (top <= 2) return 0;
+    if (top >= max - 2) return state.turns.length - 1;
+    const anchor = navigationAnchor(scroller) + 2;
+    let active = 0;
+    for (let index = 0; index < state.turns.length; index += 1) {
+      const rect = state.turns[index].user.root.getBoundingClientRect();
+      if (rect.top <= anchor) active = index;
+      else break;
+    }
+    return active;
   }
 
-  function startBottomLock() {
-    stopBottomLock();
-    if (!state.settings.autoScrollToBottom) return;
-    const scroller = document.scrollingElement || document.documentElement;
-    state.bottomLastHeight = scroller.scrollHeight;
-    state.bottomScrollUntil = Date.now() + (state.settings.performanceMode ? 6200 : 4200);
-    state.bottomScrollTimer = setTimeout(bottomLockTick, 260);
-    state.bottomScrollInterval = setInterval(bottomLockTick, 520);
+  function updateActiveTurn(force = false) {
+    const next = activeTurnIndex();
+    if (!force && next === state.activeIndex) return;
+    state.activeIndex = next;
+    renderTimelineState();
   }
 
-  function maybeScrollNewConversationToBottom() {
-    startBottomLock();
+  function scheduleActiveUpdate() {
+    if (state.scrollFrame) return;
+    state.scrollFrame = requestAnimationFrame(() => {
+      state.scrollFrame = 0;
+      updateActiveTurn();
+    });
   }
 
   function applySettings() {
-    ensureUi();
-    state.root.classList.toggle('cn-disabled', !state.settings.enabled);
-    state.root.classList.toggle('cn-left', state.settings.side === 'left');
-    state.root.style.setProperty('--cn-side-offset', `${clamp(Number(state.settings.navOffset || 64), 6, 140)}px`);
-    hideOfficialNav();
+    createRoot();
+    state.root.hidden = !state.settings.timelineEnabled || state.turns.length <= 1;
+    applyAllFolds();
+    renderTimelineState();
+  }
+
+  function routeChanged() {
+    const route = currentConversationKey();
+    if (route === state.routeKey) return false;
+    state.routeKey = route;
+    state.manualFold.clear();
+    state.autoEvaluated.clear();
+    state.activeIndex = -1;
+    state.turnRatios = [];
+    state.navigationLockIndex = -1;
+    clearTimeout(state.navigationUnlockTimer);
+    return true;
   }
 
   function rebuild() {
-    ensureUi();
-    const key = currentLocationKey();
-    const locationChanged = state.locationKey !== key;
-    if (locationChanged) {
-      state.locationKey = key;
-      state.textCache.clear();
-    }
-    state.messages = collectMessages();
-    applySettings();
-    render();
-    if (locationChanged) maybeScrollNewConversationToBottom();
-    scheduleFolds(state.settings.performanceMode ? 900 : 420);
+    routeChanged();
+    state.turns = collectTurns();
+    applyAllFolds();
+    renderTimeline();
   }
 
-  function rebuildSoon(delay = 250) {
-    clearTimeout(state.timer);
-    state.timer = setTimeout(rebuild, delay);
+  function scheduleRebuild(delay = 120) {
+    clearTimeout(state.rebuildTimer);
+    state.rebuildTimer = window.setTimeout(rebuild, delay);
   }
 
   function observe() {
     state.observer?.disconnect();
     state.observer = new MutationObserver((mutations) => {
-      if (mutations.every(m => isOur(m.target))) return;
-      rebuildSoon(state.settings.performanceMode ? 900 : 320);
+      const relevant = mutations.some((mutation) => {
+        if (isThreadPilotNode(mutation.target)) return false;
+        return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => (
+          !(node instanceof Element) || !isThreadPilotNode(node)
+        ));
+      });
+      if (relevant) scheduleRebuild();
     });
-    state.observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    window.addEventListener('scroll', updateActive, true);
-    window.addEventListener('resize', () => rebuildSoon(200));
-    window.addEventListener('popstate', () => rebuildSoon(120));
-    setInterval(() => {
-      if (state.locationKey !== currentLocationKey()) rebuildSoon(120);
-    }, 800);
+    state.observer.observe(document.body, { childList: true, subtree: true });
+
+    window.addEventListener('scroll', scheduleActiveUpdate, { capture: true, passive: true });
+    window.addEventListener('resize', () => {
+      scheduleTimelineGeometry();
+      scheduleActiveUpdate();
+    }, { passive: true });
+    window.addEventListener('popstate', () => scheduleRebuild(60));
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'sync') return;
+      const patch = {};
+      if (changes.timelineEnabled) patch.timelineEnabled = Boolean(changes.timelineEnabled.newValue);
+      if (changes.autoCollapse) patch.autoCollapse = Boolean(changes.autoCollapse.newValue);
+      if (changes.foldPreset && FOLD_PRESETS[changes.foldPreset.newValue]) {
+        patch.foldPreset = changes.foldPreset.newValue;
+      }
+      state.settings = { ...state.settings, ...patch };
+      applySettings();
+    });
   }
 
-  document.addEventListener('keydown', (e) => {
-    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented || isEditableTarget(e.target)) return;
-    const key = e.key.toLowerCase();
-    if (!['j', 'c', 'n', 'p'].includes(key)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (key === 'j') saveSettings({ enabled: !state.settings.enabled });
-    if (key === 'c') saveSettings({ aiCollapseEnabled: !state.settings.aiCollapseEnabled, aiFoldEnabled: !state.settings.aiCollapseEnabled });
-    if (key === 'n') jumpToVisibleIndex(currentVisibleIndex() + 1);
-    if (key === 'p') jumpToVisibleIndex(currentVisibleIndex() - 1);
+  function jumpRelative(offset) {
+    if (!state.turns.length) return;
+    const start = state.activeIndex < 0 ? 0 : state.activeIndex;
+    jumpToTurn(state.turns[clamp(start + offset, 0, state.turns.length - 1)]);
+  }
+
+  document.addEventListener('keydown', (event) => {
+    const editable = closest(event.target, 'input, textarea, select, [contenteditable="true"], [role="textbox"]');
+    if (editable || !event.altKey || event.ctrlKey || event.metaKey) return;
+
+    const key = event.key.toLowerCase();
+    if (key === 'j') {
+      event.preventDefault();
+      saveSettings({ timelineEnabled: !state.settings.timelineEnabled });
+    } else if (key === 'c') {
+      event.preventDefault();
+      const hasExpanded = state.turns.some((turn) => turn.assistant && answerState(turn) !== 'collapsed');
+      setAllFolds(hasExpanded ? 'collapsed' : 'expanded');
+    } else if (key === 'n') {
+      event.preventDefault();
+      jumpRelative(1);
+    } else if (key === 'p') {
+      event.preventDefault();
+      jumpRelative(-1);
+    }
   });
 
   function init() {
-    if (!document.body) return setTimeout(init, 100);
-    ensureUi();
-    readSettings();
+    state.routeKey = currentConversationKey();
+    createRoot();
     observe();
-    setInterval(hideOfficialNav, 1800);
+    readSettings();
   }
 
-  init();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
 })();

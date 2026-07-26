@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "ThreadPilot for ChatGPT",
   "short_name": "ThreadPilot",
-  "version": "2.2",
-  "description": "Navigate long ChatGPT threads with a prompt-focused side map, previews, and AI reply folding.",
+  "version": "3.0.0",
+  "description": "Fold long ChatGPT replies and navigate every turn with a focused conversation timeline.",
   "permissions": ["storage"],
   "icons": {
     "16": "icons/icon16.png",
@@ -27,6 +27,12 @@
       "css": ["styles.css"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/ui/*.svg"],
+      "matches": ["https://chatgpt.com/*"]
     }
   ],
   "homepage_url": "https://billowssun.github.io/threadpilot-for-chatgpt/"
